@@ -1,0 +1,40 @@
+# ---- Maven ----
+target/
+!.mvn/wrapper/maven-wrapper.properties
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+release.properties
+.flattened-pom.xml
+
+# ---- IDE ----
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+
+# ---- ragsight 运行时产物 ----
+# 诊断报告输出目录
+reports/
+# 知识库索引 / 向量缓存
+.ragsight/
+# 本地实验数据
+*.ragsight-cache
+
+# ---- Java ----
+*.class
+hs_err_pid*
+replay_pid*
+
+# ---- OS ----
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ---- 日志 ----
+*.log
+logs/

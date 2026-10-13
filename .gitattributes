@@ -1,0 +1,15 @@
+# 统一换行符，避免跨平台问题。
+# 关键：Maven Wrapper 的 shell 脚本必须是 LF，否则 Linux/macOS 上
+# 执行 ./mvnw 会报 "bad interpreter: No such file or directory"。
+* text=auto eol=lf
+
+# Windows 批处理脚本保持 CRLF
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# 二进制文件不做换行符转换
+*.jar binary
+*.zip binary
+*.png binary
+*.jpg binary
+*.pdf binary

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>cn.qiyec.ragsight</groupId>
+    <artifactId>ragsight-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>ragsight-application</artifactId>
+  <name>ragsight :: application</name>
+  <description>
+    用例编排层：组织领域对象完成"导入文档 / 执行检索 / 运行诊断 / 跑消融实验"。
+    约束：只依赖 domain，不依赖任何具体的外部实现（向量库、模型、文件格式）。
+  </description>
+
+  <dependencies>
+    <dependency>
+      <groupId>cn.qiyec.ragsight</groupId>
+      <artifactId>ragsight-domain</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
