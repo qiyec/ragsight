@@ -4,100 +4,121 @@
 > **纪律**：每个「✅ 已完成」必须附带**实际执行的命令 + 实际输出**，不接受"应该能跑"。
 
 - **最后更新**：2026-10-13
-- **当前阶段**：P0 环境固化（进行中）
+- **当前阶段**：P1 领域层（进行中，已完成 knowledge / retrieval / evaluation 三上下文的骨架与核心算法）
+- **最近提交**：`f830bfe` chore: 初始化 ragsight 项目骨架
 
 ---
 
 ## ✅ 已完成
 
-### 1. 环境勘察（含两处对既有判断的纠正）
+### P0 环境与骨架
 
-**命令**：`gh api repos/agentscope-ai/agentscope-java/contents/...`、`mvn -v`、`scoop list`、`uv python list` 等
+**验证命令与结果**：
+```
+mvnw.cmd verify   ->  BUILD SUCCESS
+                     ragsight :: domain    Tests run: 49, Failures: 0, Errors: 0
+                     ragsight :: architecture-tests  Tests run: 5, Failures: 0
+java -jar ragsight-cli/target/ragsight-cli.jar --version
+                  ->  ragsight 0.1.0-SNAPSHOT
+```
 
-**关键事实**（详见 `docs/setup/environment.md`）：
-
-| 事实 | 说明 |
+| 交付物 | 说明 |
 |---|---|
-| JDK | 17.0.14 在 PATH 中；`D:\develop\environment\JDK\` 下另有 8/11/21 |
-| `JAVA_HOME` | **未设置**，但 Maven 会回退 PATH，故构建正常 |
-| Maven 版本 | 3.8.8（本地）；wrapper 锁定 3.9.9 |
-| 镜像 | ✅ **已配置阿里云**，在 `Maven安装目录/conf/settings.xml`（**不在** `~/.m2`） |
-| 本地仓库 | `D:\develop\environment\Maven\repo`（非默认位置） |
-| 版本管理器 | **无 SDKMAN**；有 Scoop（仅 git/7zip/neofetch）、fnm、uv |
-| Docker | 29.5.2 运行中 |
+| Maven 多模块骨架 | domain / application / infrastructure / cli / architecture-tests |
+| Maven Wrapper | 锁定 3.9.9，`distributionUrl` 走阿里云 |
+| Enforcer | 强制 JDK 17+ / Maven 3.8+，不满足时中文报错 |
+| 可选 Toolchains profile | 仅当 `~/.m2/toolchains.xml` 存在时激活，不破坏"clone 即可跑" |
+| `.gitattributes` | `mvnw` 强制 LF（否则 Linux 报 bad interpreter） |
+| AGENTS.md | 新会话第一读物：定位、铁律、约定、上下文协议 |
+| ADR 001/002/003 | 两层架构 / domain 零依赖 / 为何不做框架 |
+| docs/setup/environment.md | 环境实测事实与排查清单 |
+| CLI 骨架 | picocli 入口，版本号从 manifest 读取 |
 
-**纠正的两个错误判断**（记录以免重复犯错）：
-1. ❌ 曾判断"`JAVA_HOME` 空 → 构建会失败" → ✅ 实际 Maven 回退 PATH，正常
-2. ❌ 曾判断"无 settings.xml，直连 Central" → ✅ 实际全局 settings.xml 已配阿里云镜像
+### P1 领域层三上下文
 
-### 2. AgentScope 官方能力核查（决定项目方向的关键依据）
-
-**命令**：`gh api repos/agentscope-ai/agentscope-java/git/trees/main?recursive=1`
-
-**结论**：官方已有 `agentscope-spring-boot-starter`、`agentscope-admin-spring-boot-starter`（含审计、会话管理、子 Agent 任务控制器）、`agentscope-extensions-rag`（5 种 RAG 集成）。
-**因此放弃"脚手架"方向，改做 RAG 诊断工具**（详见 `docs/adr/003`）。
-
-### 3. 项目骨架建立
-
-```
-ragsight/
-├── pom.xml                    父 POM（Enforcer 强制 JDK17+ / Maven3.8+）
-├── mvnw / mvnw.cmd / .mvn/    Maven Wrapper（锁定 3.9.9，走阿里云）
-├── AGENTS.md                  新会话第一读物
-├── PROGRESS.md                本文件
-├── docs/
-│   ├── adr/001,002,003        架构决策记录
-│   └── setup/environment.md   环境事实与排查清单
-├── ragsight-domain            纯 Java 领域层（零第三方运行时依赖）
-├── ragsight-application       用例编排
-├── ragsight-infrastructure    适配器
-└── ragsight-cli               picocli 入口
-```
-
-### 4. 领域层（knowledge 上下文）首批实现
+#### ① knowledge（知识库）
 
 | 类 | 职责 |
 |---|---|
 | `DocumentId` / `ChunkId` | 值对象；`ChunkId` 用「文档#序号」复合标识，保证报告可读可复现 |
-| `Document` | 聚合：承载 `toChunks()` 不变式（序号连续、剔除空白） |
-| `Chunk` | 检索最小单位，含 heading 可选元数据 |
-| `ChunkingStrategy` | 端口接口，要求**无状态纯函数**（R5 可复现性） |
-| `FixedWindowChunkingStrategy` | 基线策略，window + overlap |
-| `RecursiveCharacterChunkingStrategy` | 按分隔符优先级递归，中文标点优先 |
+| `Document` | 聚合：承载 `toChunks()` 不变式（序号连续、剔除空白片段） |
+| `Chunk` | 检索最小单位，含可选 heading 元数据 |
+| `ChunkingStrategy` | 端口；要求**无状态纯函数**（可复现性） |
+| `FixedWindowChunkingStrategy` | 基线策略：window + overlap |
+| `RecursiveCharacterChunkingStrategy` | 按分隔符优先级递归，中文标点优先，含硬切兜底与重叠注入 |
 
-**测试**：2 个测试类，覆盖参数校验、边界覆盖、重叠正确性、序号连续性、**确定性**（可复现性）。
+#### ② retrieval（检索）
+
+| 类 | 职责 |
+|---|---|
+| `ScoredChunk` | 值对象：片段 + 分数 + 排名 + 来源阶段 |
+| `RetrievalSource` | 枚举：VECTOR / KEYWORD / FUSION / RERANK / MISSED，带中文标签 |
+| `Retriever` | 端口：query + topK → 候选列表 |
+| `Reranker` | 端口：候选重排 |
+| `ReciprocalRankFusion` | **RRF 多路融合**，默认 k=60，支持来源权重 |
+
+#### ③ evaluation（评估）
+
+| 类 | 职责 |
+|---|---|
+| `GoldenCase` | 标注用例；`isNegative()` 标识负样本（期望集合为空） |
+| `EvaluationSet` | **聚合根**，维护"用例 id 唯一"不变式 |
+| `RetrievedEvidence` | 只保留「片段标识 + 排名」，**刻意丢弃分值**（防止拿不同量纲的分数算指标） |
+| `Metric` | 指标端口；`scoreAll()` 默认跳过 NaN（负样本在排序类指标中不计入） |
+| `RecallAtK` | 召回率，负样本按定义记满分 1.0 |
+| `MRR` | 平均倒数排名，负样本返回 NaN 不参与平均 |
+
+#### ④ architecture-tests（架构门禁）
+
+用 ArchUnit 把 `AGENTS.md` 的铁律变成构建门禁，共 5 条规则：
+
+| 规则 | 守护的铁律 |
+|---|---|
+| `domain_不应依赖任何第三方库` | R1（仅允许 `java..` 与 domain 自身） |
+| `domain_不应依赖常见便利库` | R1（点名校验 Jackson / Lombok / Guava / Spring / SLF4J / AgentScope） |
+| `application_只能依赖_domain` | R2 |
+| `domain_不应使用随机数` | R5（可复现性） |
+| `domain_不应依赖基础设施` | R3（六边形依赖方向） |
+
+**测试数量**：domain 49 个 + architecture 5 个 = **54 个，全部通过**。
 
 ---
 
 ## 🔄 进行中
 
-**P0 收尾**：验证 `mvnw.cmd verify` 全绿 → git init → 首次提交 → 推送 GitHub。
+P1 尚未完成的部分：
+
+1. **`DiagnosticReport` 聚合根**与 `CaseOutcome` 尚未实现（P2 引入）
+2. **`nDCG` 未实现** —— 已规划，需带手算验证测试
+3. **`BM25Retriever` 未实现** —— 关键词召回，混合检索的另一半（P2）
+4. **`Retriever` / `Reranker` 尚无任何实现** —— 都在 infrastructure，P2 开始写
 
 ---
 
 ## ⏭️ 下一步（精确到文件）
 
-1. **确认 P0 构建通过**：`mvnw.cmd verify` 全绿（含 2 个测试类）
-2. **修复已知设计粗糙点**：
-   - `RecursiveCharacterChunkingStrategy.mergeWithOverlap()` 中超长片段的处理分支会**跳过 buffer 累积**，
-     导致片段顺序被打乱的可能性。需重写为"先 flush buffer 再处理超长片段"。
-   - 补一个测试：验证超长片段场景下的**片段顺序与原文一致**
-3. **`git init` + 首次提交 + 推送**（`gh repo create qiyec/ragsight --public --source=. --push`）
-4. **进入 P1**：补齐 domain 三上下文
-   - `retrieval/`：`ScoredChunk`、`Retriever`、`Reranker`、`FusionStrategy` 端口
-   - `evaluation/`：`GoldenCase`、`EvaluationSet`、`Metric`、`RecallAtK`、`MRR`、`NDCG`、`DiagnosticReport`
-   - 新增 `ragsight-architecture-tests` 模块，用 **ArchUnit** 强制 R1（domain 零第三方依赖）
-5. **补 ADR-005**：元评测设计（如何证明诊断工具本身正确）
+**P2 检索管道**，按此顺序：
+
+1. `ragsight-infrastructure`：
+   - `DeterministicHashEmbedding`（离线确定性向量，**CI 无需 API Key**）
+   - `InMemoryVectorStore`（暴力余弦检索）
+   - `VectorRetriever`、`Bm25Retriever`、`LexicalOverlapReranker`
+2. `ragsight-domain` 补 `nDCG`（含手算测试）
+3. `ragsight-application`：`IngestDocumentUseCase`、`RunDiagnosisUseCase`
+   —— **注意**：有了真实类后，把 `archunit.properties` 的
+   `failOnEmptyShould` 改回 `true`（见下方技术债）
+4. `ragsight-domain`：`DiagnosticReport` 聚合根 + `CaseOutcome`
+5. 完整验证 + 提交
 
 ---
 
 ## ❓ 待决策
 
-| # | 事项 | 备选方案 | 状态 |
-|---|---|---|---|
-| 1 | 仓库名 `ragsight` | 已建议，**待用户最终确认** | ⏳ |
-| 2 | Java 版本管理方案 | A. 什么都不装用 wrapper（推荐）<br>B. 用 Scoop 统一管<br>C. 装 SDKMAN/mise | ⏳ 用户取消了提问，待重提 |
-| 3 | 是否需要 pgvector 对比实验 | 需要 Docker（已具备） | 未到该阶段 |
+| # | 事项 | 状态 |
+|---|---|---|
+| 1 | 仓库名 `ragsight` 是否最终确定 | ⏳ 待用户确认 |
+| 2 | 是否推送到 GitHub（`gh repo create qiyec/ragsight --public`） | ⏳ 待用户确认 |
+| 3 | 评测集用哪份文档构建（需公开可复现的语料） | ⏳ P2 后期决定 |
 
 ---
 
@@ -105,13 +126,18 @@ ragsight/
 
 | # | 验证内容 | 命令 | 实际结果 |
 |---|---|---|---|
-| 1 | AgentScope 构件坐标正确 | `gh api .../agentscope-core/pom.xml` | `groupId=io.agentscope`，`artifactId=agentscope-core` |
-| 2 | AgentScope 已发布 Maven Central | `Invoke-WebRequest .../maven-metadata.xml` | `agentscope-bom` / `agentscope-harness` / `agentscope-spring-boot-starter` / `agentscope-extensions-rag` 全部 `latest=2.1.0-BETA1`；稳定版 `2.0.4` |
-| 3 | Maven 3.9.9 分发地址可用 | `Invoke-WebRequest -Method Head` | 阿里云与官方源均返回 `200` |
-| 4 | 全局 settings.xml 启用阿里云镜像 | 构建日志 | 所有依赖显示 `Downloaded from aliyun-central` |
-| 5 | Scoop 未管理 Java/Maven | `scoop list` | 仅 `7zip` / `git` / `neofetch` |
-| 6 | Maven wrapper 生成 | `mvn -N wrapper:wrapper` | ⚠️ 首次失败：`-Dmaven=3.9.9` 被 PowerShell 按点拆参 → `Unknown lifecycle phase ".9.9"`，产出无效 URL。已手工修正为 3.9.9 + 阿里云地址 |
-| 7 | domain 层首次编译 | `mvnw.cmd -B verify` | ⚠️ 失败：`Document.java` 引用了尚未创建的 `Chunk`（时序问题，非代码缺陷）。补齐后重验 |
+| 1 | AgentScope 构件坐标 | `gh api .../agentscope-core/pom.xml` | `groupId=io.agentscope` |
+| 2 | AgentScope 已发 Maven Central | `maven-metadata.xml` | `agentscope-bom` 等 `latest=2.1.0-BETA1`，稳定版 `2.0.4` |
+| 3 | **AgentScope 自身基线是 Java 17** | `gh api .../agentscope-java/main/pom.xml` | `<java.version>17</java.version>`，`maven.compiler.release=17`<br>→ **结论：本项目统一 JDK 17，Agent 层不需要 21** |
+| 4 | Maven 3.8.8 可跑在 JDK 21 | `JAVA_HOME=<jdk21>; mvn -v` | `Java version: 21.0.7` |
+| 5 | 全局 settings.xml 启用阿里云镜像 | Maven 构建日志 | 依赖显示 `Downloaded from aliyun-central` |
+| 6 | 本地仓库非默认位置 | 读 `conf/settings.xml` | `D:\develop\environment\Maven\repo` |
+| 7 | Scoop 未管理 Java/Maven | `scoop list` | 仅 `7zip` / `git` / `neofetch` |
+| 8 | 无 SDKMAN / mise / asdf | `Get-Command sdk` 等 | 全部 not found |
+| 9 | `mvnw` 换行符正确 | `git ls-files --eol mvnw` | `i/lf w/lf attr/text=auto eol=lf` |
+| 10 | 全量构建 | `mvnw.cmd verify` | `BUILD SUCCESS`，54 个测试全通过 |
+| 11 | CLI 可执行 | `java -jar ... --version` | `ragsight 0.1.0-SNAPSHOT` |
+| 12 | CLI 中文输出正常 | 加 `-Dstdout.encoding=UTF-8` | 中文正常显示（不加则控制台乱码） |
 
 ---
 
@@ -119,10 +145,26 @@ ragsight/
 
 | # | 问题 | 影响 | 计划 |
 |---|---|---|---|
-| 1 | `mergeWithOverlap()` 超长片段分支可能打乱顺序 | 影响片段 ordinal 与原文一致性 | P0 收尾修复（见"下一步"第 2 条） |
-| 2 | Maven 输出中文乱码 | 仅影响可读性，不影响构建 | 已用 `MAVEN_OPTS=-Dfile.encoding=UTF-8` 缓解；待确认是否需写入 `.mvn/jvm.config` |
-| 3 | 缺 ArchUnit 架构测试 | R1 铁律尚未自动守护 | P1 引入 |
-| 4 | POM 的 domain 模块 description 提到 `ragsight-architecture-tests`，但该模块尚未创建 | 文档与实现不一致 | P1 创建，或先改描述 |
+| 1 | `archunit.properties` 设了 `failOnEmptyShould=false` | 架构规则若被写空将不再报警，门禁可能静默失效 | **P2 有了 application 真实类后改回 `true`** |
+| 2 | 缺 nDCG 指标 | 诊断报告少一个排序质量维度 | P2 |
+| 3 | `Retriever` / `Reranker` 无实现 | 尚不能真正跑检索 | P2 |
+| 4 | CLI 只有骨架，无功能子命令 | `rag diagnose` 尚未存在 | P3 |
+| 5 | 无 CI 配置 | 推送后无法自动验证 | P2 加 GitHub Actions |
+| 6 | 无 LICENSE 文件 | 开源仓库必需 | 推送前补（建议 Apache-2.0） |
+| 7 | 无 README.md | 仓库第一眼印象所必需 | 推送前补 |
+
+---
+
+## 🐛 已修复的缺陷（记录以免重复犯错）
+
+| # | 缺陷 | 根因 | 修复 |
+|---|---|---|---|
+| 1 | Maven wrapper 生成无效 URL（`apache-maven/3/apache-maven-3-bin.zip`） | PowerShell 把 `-Dmaven=3.9.9` 按点号拆成两个参数，Maven 报 `Unknown lifecycle phase ".9.9"`，插件回退默认值 | 直接写 `maven-wrapper.properties`，锁定 3.9.9 |
+| 2 | `RecursiveCharacterChunkingStrategy.mergeWithOverlap()` 顺序错乱 | 超长片段分支 `continue` 前未 flush buffer，可能把超长片段插到前面片段之前 | 先 flush buffer 再处理超长片段 |
+| 3 | RRF 融合分数不累加 | 误用 `ScoredChunk` 作聚合键，但其 `record equals` 含 `rank`，同一片段在不同路被视为不同条目 | 改为按 `ChunkId` 聚合 |
+| 4 | 测试断言"片段拼接 == 原文"误报 | 段落间 `\n\n` 不属于任何片段（片段会 strip），该断言本身不成立 | 改为与"非空白内容"比较 |
+| 5 | POM 无法解析 | XML 注释中写了 `--version`，`--` 在 XML 注释中非法 | 改写注释文本 |
+| 6 | 架构测试对空包失败 | `ragsight-application` 尚无类，规则匹配不到 | 加 `archunit.properties`（见技术债 #1） |
 
 ---
 
@@ -134,4 +176,5 @@ ragsight/
 | `docs/adr/001-two-layer-architecture.md` | 为什么分两层 |
 | `docs/adr/002-domain-zero-dependencies.md` | 为什么 domain 零依赖 |
 | `docs/adr/003-why-diagnostic-tool-not-framework.md` | 为什么不造框架（含官方能力核查证据） |
-| `docs/setup/environment.md` | 环境要求、作者机器实测状态、排查清单 |
+| `docs/setup/environment.md` | 环境要求、实测状态、排查清单 |
+| `docs/setup/toolchains.xml` | 可选 Toolchains 配置模板 |

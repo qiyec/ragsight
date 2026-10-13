@@ -17,6 +17,7 @@
     <module>ragsight-application</module>
     <module>ragsight-infrastructure</module>
     <module>ragsight-cli</module>
+    <module>ragsight-architecture-tests</module>
   </modules>
 
   <properties>
@@ -26,6 +27,7 @@
 
     <junit.version>5.10.2</junit.version>
     <assertj.version>3.25.3</assertj.version>
+    <archunit.version>1.3.0</archunit.version>
     <slf4j.version>2.0.13</slf4j.version>
     <logback.version>1.5.6</logback.version>
     <picocli.version>4.7.6</picocli.version>
@@ -92,6 +94,14 @@
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-jar-plugin</artifactId>
           <version>${maven.jar.plugin.version}</version>
+          <configuration>
+            <archive>
+              <manifest>
+                <!-- 把解析后的版本写入 manifest，供 CLI 输出版本号时使用 -->
+                <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+              </manifest>
+            </archive>
+          </configuration>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
