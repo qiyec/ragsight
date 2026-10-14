@@ -7,7 +7,7 @@ import java.util.stream.IntStream;
 /**
  * 待检索的原始文档。
  *
- * <p>这是"知识库"限界上下文的核心实体，代表切分**之前**的完整文档。
+ * <p>这是"知识库"模块的核心实体，代表切分**之前**的完整文档。
  * 切分后的片段见 {@link Chunk}。
  *
  * @param id      文档标识
@@ -60,7 +60,7 @@ public record Document(DocumentId id, String title, String content, Optional<Str
     /**
      * 把一组文本片段装配成本文档的 {@link Chunk} 列表。
      *
-     * <p>这是本上下文的**不变式**所在地：所有切分策略都必须通过它产出 Chunk，
+     * <p>这是本上下文的**规则**所在地：所有切分策略都必须通过它产出 Chunk，
      * 从而保证 ordinal 连续、正文被 trim、空片段被剔除。
      * 这样各个切分策略自身不需要重复实现这些规则。
      *

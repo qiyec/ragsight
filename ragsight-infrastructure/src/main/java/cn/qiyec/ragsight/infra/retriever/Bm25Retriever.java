@@ -19,8 +19,8 @@ import java.util.List;
  * BM25 基于精确词元匹配，在这类查询上表现显著更好。
  * 两者互补正是混合检索（+RRF）成为工业标配的原因。
  *
- * <p>本类只做编排：切词 → 打分 → 排序。算法在 {@link Bm25Scorer}（domain），
- * 切词规则在 {@link Tokenizer}（domain 端口）。这个分工见 ADR-004。
+ * <p>这个类只负责把几步串起来：切词 → 打分 → 排序。算法在 {@link Bm25Scorer}（domain），
+ * 切词规则在 {@link Tokenizer}（domain 接口）。这个分工见 ADR-004。
  */
 public final class Bm25Retriever implements Retriever {
 

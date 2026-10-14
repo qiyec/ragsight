@@ -3,7 +3,7 @@ package cn.qiyec.ragsight.domain.knowledge;
 /**
  * 文档标识。
  *
- * <p>值对象：不可变，构造时校验。
+ * <p>不可变，构造时就校验参数。
  */
 public record DocumentId(String value) {
 

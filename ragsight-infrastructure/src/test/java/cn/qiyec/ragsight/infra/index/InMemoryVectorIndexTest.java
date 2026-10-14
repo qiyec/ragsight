@@ -163,7 +163,7 @@ class InMemoryVectorIndexTest {
     }
 
     @Test
-    @DisplayName("同分时顺序必须稳定可复现（铁律 R5）")
+    @DisplayName("同分时顺序必须稳定可复现（R5）")
     void should_be_stable_on_ties() {
         // 两个向量都与查询正交 → 相似度都是 0，排序只能靠次级键（片段标识）
         index.rebuild(

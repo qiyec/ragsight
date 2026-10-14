@@ -138,7 +138,7 @@ agentscope-service/                 ← 完整的 Agent 运行时平台（控制
 明确**不做**（写入 README 的 Out of Scope）：
 - ❌ 不做向量数据库
 - ❌ 不做通用 RAG 框架
-- ❌ 不做 Agent 编排平台（AgentScope Service 已覆盖）
+- ❌ 不做 Agent 组织平台（AgentScope Service 已覆盖）
 - ❌ 不做沙箱、不做多渠道接入（无真实业务理由）
 - ❌ 不做 Web 产品形态（先做 CLI + 报告）
 

@@ -11,12 +11,12 @@ import java.util.List;
 /**
  * 向量检索器：把 {@link EmbeddingModel} 与 {@link VectorIndex} 组合成 {@link Retriever}。
  *
- * <p>这是"组合优于继承"的具体体现——本类几乎没有逻辑，只负责编排：
- * 查询向量化 → 索引搜索 → 返回候选。真正的能力在 domain 定义的两个端口里。
+ * <p>这是"组合优于继承"的具体体现——本类几乎没有逻辑，只负责组织：
+ * 查询向量化 → 索引搜索 → 返回候选。真正的能力在 domain 定义的两个接口里。
  *
  * <p><b>为什么做索引构建的便捷入口</b>：如果让调用方自己依次调用
  * {@code embedding.embed(chunks)} 和 {@code index.rebuild(...)}，
- * 就有机会把两个列表的顺序搞乱、把维度传错。把这段编排收进来，
+ * 就有机会把两个列表的顺序搞乱、把维度传错。把这段组织收进来，
  * 让"构建一个可用的向量检索器"变成一步操作。
  */
 public final class VectorRetriever implements Retriever {

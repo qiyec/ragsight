@@ -96,7 +96,7 @@ class RecursiveCharacterChunkingStrategyTest {
     }
 
     @Test
-    @DisplayName("含超长片段时，片段顺序必须与原文一致（顺序不变式）")
+    @DisplayName("含超长片段时，片段顺序必须与原文一致（顺序规则）")
     void should_preserve_order_when_piece_exceeds_chunk_size() {
         // 构造：超长无分隔符段落 + 短段落。
         // 超长段落会被硬切，短段落本身不超限——两者混合时最容易触发顺序错乱。
@@ -112,7 +112,7 @@ class RecursiveCharacterChunkingStrategyTest {
         String merged = chunks.stream().map(Chunk::text).reduce("", String::concat);
         assertThat(merged).isEqualTo(longParagraph + shortParagraph);
 
-        // 顺序不变式的关键断言：短段落必须在最后，不能被插到超长段落的片段之前
+        // 顺序规则的关键断言：短段落必须在最后，不能被插到超长段落的片段之前
         assertThat(chunks.get(chunks.size() - 1).text()).isEqualTo(shortParagraph);
 
         // 超长段落应被切成多个不超限的片段，而不是整块塞进一个片段

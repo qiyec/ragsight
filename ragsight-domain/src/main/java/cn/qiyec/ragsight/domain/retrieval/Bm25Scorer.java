@@ -34,7 +34,7 @@ import java.util.Set;
  * </ul>
  *
  * <p><b>本类不做分词</b>：构造时接收**已分词**的文档。这个边界是刻意的，
- * 见 ADR-004——把不确定的分词抽成端口，让确定的算法留在内核。
+ * 见 ADR-004——把不确定的分词抽成接口，让确定的算法留在内核。
  */
 public final class Bm25Scorer {
 
@@ -206,7 +206,7 @@ public final class Bm25Scorer {
     }
 
     /**
-     * 返回按分数降序排列的文档下标；同分时按下标升序，保证结果确定（铁律 R5）。
+     * 返回按分数降序排列的文档下标；同分时按下标升序，保证结果确定（R5）。
      */
     public List<Integer> rankByScore(List<String> queryTokens) {
         double[] scores = scoreAll(queryTokens);

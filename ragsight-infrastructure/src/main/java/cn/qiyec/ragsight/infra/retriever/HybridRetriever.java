@@ -22,7 +22,7 @@ import java.util.List;
  * 两路分数量纲不可比（余弦在 [-1,1]，BM25 无上界），
  * RRF 只用排名，天然免去归一化与调权重。
  *
- * <p>本类只做编排：调用各路召回，交给融合器合并。融合算法在 domain。
+ * <p>这个类只负责把几步串起来：调用各路召回，交给融合器合并。融合算法在 domain。
  */
 public final class HybridRetriever implements Retriever {
 

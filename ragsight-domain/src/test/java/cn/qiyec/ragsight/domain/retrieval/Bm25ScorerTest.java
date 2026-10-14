@@ -264,7 +264,7 @@ class Bm25ScorerTest {
     }
 
     @Test
-    @DisplayName("同分时按下标升序，保证结果确定可复现（铁律 R5）")
+    @DisplayName("同分时按下标升序，保证结果确定可复现（R5）")
     void ties_should_break_by_index_ascending() {
         // 三篇完全相同的文档 → 分数相同 → 下标升序
         List<List<String>> docs = List.of(

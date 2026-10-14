@@ -103,7 +103,7 @@ public record ReciprocalRankFusion(int k, Map<RetrievalSource, Double> weights) 
         }
 
         List<ChunkId> ordered = new ArrayList<>(scoreByChunk.keySet());
-        // 分数降序；同分时按片段标识排序，保证结果确定（铁律 R5）
+        // 分数降序；同分时按片段标识排序，保证结果确定（R5）
         ordered.sort(Comparator
                 .comparingDouble((ChunkId id) -> scoreByChunk.get(id)).reversed()
                 .thenComparing(ChunkId::toString));

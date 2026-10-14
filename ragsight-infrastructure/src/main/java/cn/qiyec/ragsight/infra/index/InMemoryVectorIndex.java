@@ -16,10 +16,10 @@ import java.util.List;
  * <ul>
  *   <li>数万条片段的穷举计算在现代 CPU 上是毫秒级，完全够用</li>
  *   <li>诊断工具的价值在于"度量准不准"，不在于"检索快不快"</li>
- *   <li>引入向量库会让"clone 即可跑"（铁律 R4）失效——需要 Docker、需要建表、需要连接</li>
+ *   <li>引入向量库会让"clone 即可跑"（R4）失效——需要 Docker、需要建表、需要连接</li>
  * </ul>
  * 当语料规模真的到达暴力搜索不可接受时，再以适配器形式接入 pgvector，
- * 而 domain 的 {@link VectorIndex} 契约无需任何改动。这正是端口-适配器的收益。
+ * 而 domain 的 {@link VectorIndex} 契约无需任何改动。这正是接口-实现的收益。
  *
  * <p><b>相似度选择</b>：使用余弦相似度。虽然本项目的离线 embedding 已做 L2 归一化
  * （此时余弦等价于点积），但这里仍然显式做完整余弦计算，原因是该实现也要能
@@ -86,7 +86,7 @@ public final class InMemoryVectorIndex implements VectorIndex {
             candidates.add(new Candidate(chunks.get(i), cosine(queryVector, vectors.get(i))));
         }
 
-        // 相似度降序；同分时按片段标识排序，保证结果可复现（铁律 R5）
+        // 相似度降序；同分时按片段标识排序，保证结果可复现（R5）
         candidates.sort(Comparator
                 .comparingDouble(Candidate::score).reversed()
                 .thenComparing(c -> c.chunk().id().toString()));

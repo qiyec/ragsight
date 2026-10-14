@@ -6,16 +6,16 @@ import cn.qiyec.ragsight.domain.knowledge.Document;
 import java.util.List;
 
 /**
- * 切分策略（端口）。
+ * 切分策略（接口）。
  *
  * <p>RAG 流水线的第一道关卡，也是诊断中最常见的瓶颈来源之一：
  * 如果答案被切断在两个片段之间，无论后续检索和重排多强都无法召回完整答案。
  *
  * <p>本接口刻意设计为**无状态纯函数**：给定相同文档，必须产出完全相同的片段列表。
- * 这是诊断结论可复现的前提（见 ADR-001、AGENTS.md 铁律 R5）。
+ * 这是诊断结论可复现的前提（见 ADR-001、AGENTS.md 的 R5）。
  *
  * <p>实现必须通过 {@link Document#toChunks(List)} 装配结果，
- * 以保证序号连续、空片段被剔除等不变式只在一处维护。
+ * 以让"序号连续、空片段剔除"这类规则只在一处维护。
  */
 public interface ChunkingStrategy {
 

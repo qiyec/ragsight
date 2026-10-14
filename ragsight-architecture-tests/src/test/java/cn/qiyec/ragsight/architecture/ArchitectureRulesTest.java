@@ -12,14 +12,14 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 /**
  * 架构约束的自动化守护。
  *
- * <p>这些规则把 {@code AGENTS.md} 里的铁律从"文档承诺"变成"构建门禁"。
+ * <p>这些规则把 {@code AGENTS.md} 里的规矩从"文档承诺"变成"构建门禁"。
  * 违反即 {@code mvn verify} 失败，不依赖 code review 时的人为自觉。
  *
- * <p>覆盖的铁律：
+ * <p>覆盖的规矩：
  * <ul>
  *   <li>R1 —— domain 层零第三方运行时依赖</li>
  *   <li>R2 —— application 层只能依赖 domain</li>
- *   <li>R3 —— 端口（接口）定义在 domain，不由外部实现反向依赖</li>
+ *   <li>R3 —— 需要外部能力的地方在 domain 定接口，实现放 infrastructure</li>
  *   <li>R5 —— domain 层不得引入随机性（否则诊断结果不可复现）</li>
  * </ul>
  */
@@ -75,8 +75,8 @@ class ArchitectureRulesTest {
     // ---------------------------------------------------------------
 
     /**
-     * 用例编排层不得知道具体的外部实现（向量库、模型客户端、文件格式）。
-     * 外部能力必须以 domain 定义的端口出现，实现放在 infrastructure。
+     * 用例层不得知道具体的外部实现（向量库、模型客户端、文件格式）。
+     * 外部能力必须以 domain 定义的接口出现，实现放在 infrastructure。
      */
     @ArchTest
     static final ArchRule application_只能依赖_domain =
@@ -100,14 +100,14 @@ class ArchitectureRulesTest {
                     .resideInAnyPackage("java.util.Random", "java.security.SecureRandom");
 
     // ---------------------------------------------------------------
-    // R3：端口在 domain，实现不得反向污染
+    // R3：接口在 domain，实现不得反向污染
     // ---------------------------------------------------------------
 
     /**
      * 基础设施层不得被 domain 或 application 反向依赖。
      *
      * <p>依赖方向必须是 infrastructure → domain，绝不能反过来。
-     * 这条规则守护六边形架构的"端口-适配器"方向。
+     * 这条规则守护依赖方向。
      */
     @ArchTest
     static final ArchRule domain_不应依赖基础设施 =

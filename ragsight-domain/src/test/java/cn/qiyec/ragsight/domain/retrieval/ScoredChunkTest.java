@@ -8,7 +8,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@DisplayName("ScoredChunk 值对象")
+@DisplayName("ScoredChunk 数据类")
 class ScoredChunkTest {
 
     @Test

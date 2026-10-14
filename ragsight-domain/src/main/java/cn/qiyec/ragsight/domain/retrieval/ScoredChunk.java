@@ -4,17 +4,19 @@ import cn.qiyec.ragsight.domain.knowledge.Chunk;
 import cn.qiyec.ragsight.domain.knowledge.ChunkId;
 
 /**
- * 带相关性分数的片段——检索上下文的通用语言。
+ * 带分数和排名的片段。
  *
- * <p><b>为什么不直接复用 {@link Chunk}</b>：知识库语境关心"这个片段是什么"，
- * 检索语境关心"它有多相关、从哪条路召回的"。两者是不同的问题，
- * 刻意不共用同一个模型（防腐层）。诊断报告需要 {@code stage} 字段来
- * 判断"是召回没召到"还是"重排把好的排下去了"。
+ * <p><b>为什么不直接复用 {@link Chunk}</b>：文档模块关心"这个片段是什么"，
+ * 召回模块关心"它排第几、从哪条路召回的"。两件事不一样，
+ * 所以各用各的对象，不硬凑一个万能的。
+ *
+ * <p>诊断报告需要 {@code stage} 字段来判断"是召回没召到"
+ * 还是"重排把好的排下去了"——没有它就只能看到最终结果，无法定位原因。
  *
  * @param chunk 原始片段
  * @param score 相关性分数，约定**越大越相关**
- * @param rank  在当前结果列表中的排名，从 1 开始（1 表示最相关）
- * @param stage 产出这个结果的检索阶段
+ * @param rank  在当前结果里的排名，从 1 开始（1 表示最相关）
+ * @param stage 这一步是哪种召回方式产出的
  */
 public record ScoredChunk(Chunk chunk, double score, int rank, RetrievalSource stage) {
 

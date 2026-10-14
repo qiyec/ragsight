@@ -1,113 +1,107 @@
 # ragsight
 
-**RAG 质量诊断与调优工作台 —— 定位检索增强生成的真实瓶颈。**
+**帮你看清 RAG 到底哪里不行。**
 
-> 不是又一个 RAG 框架，而是一个**诊断工具**。
+不是另一个 RAG 框架，是一个**诊断工具**。
 
 ---
 
-## 它解决什么问题
+## 它干什么
 
-所有做过 RAG 的人都遇到过"效果不好"，但几乎没人能回答一个更基本的问题：
+做过 RAG 的人大概都经历过这个场景：效果不好，然后开始猜。
 
-> **瓶颈到底在哪一段？**
+调切分粒度、换 embedding 模型、加重排——一轮轮试下来，有时候好一点，有时候白忙。但很少有人能回答一个更基本的问题：
 
-是切分把答案切断了？是召回根本没捞到？还是重排把本来排第一的正确答案压下去了？
+> 到底是哪一步不行？
 
-凭感觉调参的结果通常是：改了半天切分粒度，而真正的瓶颈其实在**只用了向量召回**。
-
-ragsight 把 RAG 拆成**可独立度量的阶段**，逐段给出指标，直接定位瓶颈：
+ragsight 把检索过程拆成能单独测量的几步，分别给出指标，让你看到瓶颈在哪：
 
 ```
-文档 ──→ [解析] ──→ [切分] ──→ [向量化] ──┐
-                                          ├──→ [检索] ──→ [重排] ──→ [上下文装配] ──→ 生成
-问题 ─────────────────────────────────────┘
-         │
-         └──→ 逐段埋点，产出诊断报告
+文档 ──> 解析 ──> 切分 ──> 向量化 ──┐
+                                    ├──> 召回 ──> 重排 ──> 拼上下文 ──> 生成
+问题 ───────────────────────────────┘
 
-  ┌──────────────────────────────────────────────────────┐
-  │  阶段             Recall@5    MRR    诊断             │
-  │  仅向量召回         0.62     0.41   ← 这里是瓶颈      │
-  │  + BM25 混合检索    0.81     0.55   ✅ Recall +19pt    │
-  │  + 重排             0.81     0.78   ✅ MRR    +23pt    │
-  │  切分 512→256      0.83     0.80   ✅ 仅 +2pt，不值得  │
-  └──────────────────────────────────────────────────────┘
+    每一步都能单独测，所以能定位到底哪一步拖后腿
 ```
 
-最后一行才是诊断的价值：**告诉你哪些改动不值得做**。
+跑一次它给出的东西长这样（数据来自内置的演示文档）：
+
+```
+指标对比
+| 配置                 | Recall@5 | MRR@5 | nDCG@5 |
+|----------------------|----------|-------|--------|
+| 仅向量召回 (基准)     | 0.889    | 0.667 | 0.703  |
+| 仅关键词召回          | 0.889    | 0.762 | 0.786  |
+| 向量+关键词 融合      | 0.889    | 0.690 | 0.733  |
+
+相对基准的变化
+| 仅关键词召回         | MRR +0.095 | nDCG +0.083 |  <- 收益最大
+| 向量+关键词 融合     | MRR +0.024 | nDCG +0.030 |  <- 没到阈值，不值得做
+```
+
+最后一行才是它真正的用处：**告诉你哪些改动不值得做**。很多"优化"增加的复杂度远大于那点收益，但没人量化过，所以就一直加。
 
 ---
 
 ## 为什么不做成 RAG 框架
 
-因为框架那层已经有成熟方案，再造一个是重复劳动。项目在动手前实际核查了
-[AgentScope Java](https://github.com/agentscope-ai/agentscope-java) 官方仓库的模块结构：
+因为那一层已经不缺人了。动手之前我翻了 [AgentScope Java](https://github.com/agentscope-ai/agentscope-java) 的代码结构：
 
 ```
 agentscope-extensions/
-├── agentscope-spring-boot-starters/     ← 官方已有 Starter（含 admin 治理面）
-├── agentscope-extensions-rag/           ← 官方已有 5 种 RAG 集成
-│                                            (Simple / Bailian / Dify / RAGFlow / Haystack)
-├── agentscope-extensions-judge/         ← JEV 结构化决策与评估
+├── agentscope-spring-boot-starters/     已经有 Starter 了
+├── agentscope-extensions-rag/           已经有 5 种 RAG 接入
+│                                        (Simple / Bailian / Dify / RAGFlow / Haystack)
 └── ...
 ```
 
-官方提供的是 **RAG 的实现**。但**没有任何工具回答"我的 RAG 哪一段是短板"**。
-ragsight 做的是这个空白。完整论证见 [ADR-003](docs/adr/003-why-diagnostic-tool-not-framework.md)。
+它们提供的是 RAG 的**实现**。但没人回答"我这套 RAG 哪一步是短板"。
+
+ragsight 做的就是这件事。完整的判断过程写在 [ADR-003](docs/adr/003-why-diagnostic-tool-not-framework.md) 里。
 
 ---
 
-## 架构：两层，职责严格分离
+## 怎么做的：核心算法不依赖任何外部东西
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ 第二层：Agentic 诊断器（基于 AgentScope）        [规划中]     │
-│ 「自主做实验的调试助手」                                      │
-│                                                              │
-│  全组合实验是组合爆炸（6切分 × 3检索 × 2重排 = 36 组），      │
-│  静态穷举成本不可接受 → 必须由 Agent 看结果决定下一步试什么   │
-└───────────────────────┬─────────────────────────────────────┘
-                        │ 作为 Tool 调用
-┌───────────────────────▼─────────────────────────────────────┐
-│ 第一层：诊断引擎（纯 Java，六边形架构）          [开发中]     │
-│ 「确定性的度量仪」——每个实验都是纯函数                       │
-│                                                              │
-│   chunk / index / retrieve / rerank / evaluate / report     │
-└─────────────────────────────────────────────────────────────┘
-```
+这是整个项目的设计底线，值得单独说。
 
-**为什么必须分两层**：
+指标计算（Recall、MRR、nDCG）和检索算法（BM25、RRF 融合）全部放在 `ragsight-domain` 里，**这个模块不引用任何第三方库，只用 JDK 自带的东西**。
 
-- 诊断结论必须**可复现**。同一个知识库、同一个评测集，跑两次必须得到同样的数字。
-  因此指标计算**绝不能引入 LLM** —— 否则工具本身就不可信。
-- 但组合爆炸需要**自适应决策**，事先编排不出来。这是 Agent 的适用场景。
+好处很实在：
 
-两者不能混：指标算错没人知道；编排写死则诊断不够深入。
-完整论证见 [ADR-001](docs/adr/001-two-layer-architecture.md)。
+- 能在没有网络、没有数据库、没有 API Key 的机器上完整跑测试和验证
+- 算法对不对，可以用手算的数字去核对，不靠"跑起来看着像是对的"
+- 换向量库、换 embedding 模型、换向量化方式，都不用动这些代码
+
+实现上就是：需要外部能力的地方（比如调用模型、存向量）定义一个接口，具体实现放到 `ragsight-infrastructure` 里。这样核心算法不知道外部世界长什么样。
+
+指标计算尤其不能引入大模型。同一份文档、同一套测试集，跑两次必须得到同样的数字——如果结论本身不稳定，用户拿它去改生产配置就没道理了。
+
+至于"要不要让大模型来决定下一步试什么"，那是后面的事（见下面的规划）。现在这一层是纯粹的度量工具。
 
 ---
 
-## 模块结构
+## 模块划分
 
 ```
 ragsight-parent
-├── ragsight-domain               纯 Java 领域层，零第三方运行时依赖
-│   ├── knowledge/                限界上下文①：知识库（文档生命周期）
-│   ├── retrieval/                限界上下文②：检索（查询执行）
-│   └── evaluation/               限界上下文③：评估（质量度量）
-├── ragsight-application          用例编排，只依赖 domain
-├── ragsight-infrastructure       适配器：实现 domain 定义的端口
-├── ragsight-cli                  picocli 命令行入口
-└── ragsight-architecture-tests   用 ArchUnit 守护架构铁律
+├── ragsight-domain              核心逻辑，只依赖 JDK
+│   ├── knowledge/               文档与切分
+│   ├── retrieval/               召回、融合、打分
+│   └── evaluation/              指标计算
+├── ragsight-application         把几步串成一个完整的用例
+├── ragsight-infrastructure      上面那些接口的具体实现
+├── ragsight-cli                 命令行入口
+└── ragsight-architecture-tests  用测试守住"domain 不许引第三方库"这条规矩
 ```
 
-**依赖方向**：`cli → infrastructure → application → domain`，绝不反向。
+依赖方向是单线的：`cli → infrastructure → application → domain`。反过来依赖会直接让构建失败，有自动化测试盯着。
 
 ---
 
-## 快速开始
+## 跑起来
 
-**环境要求**：JDK 17+ 、Maven 3.8+（仅 Maven Wrapper 需要，仓库已自带）
+需要 JDK 17 或更高。Maven 不用装，仓库里带了。
 
 ```bash
 git clone https://github.com/qiyec/ragsight.git
@@ -118,48 +112,49 @@ mvnw.cmd verify
 
 # Linux / macOS
 ./mvnw verify
+
+# 跑一次诊断，看内置演示文档的报告
+java -jar ragsight-cli/target/ragsight-cli.jar diagnose
 ```
 
-**预期结果**：`BUILD SUCCESS`，全部测试通过。
+`verify` 应该全部通过。**不需要 API Key，不需要数据库，不需要 Docker，也不用联网**（依赖已经在本地仓库的情况下）。
 
-> **这是本项目的核心设计承诺：默认路径零配置。**
-> 不需要 API Key、不需要数据库、不需要 Docker、不需要联网（依赖已在本地仓库时）。
-> 所有外部能力（真实模型、向量库、PDF 解析）都是 **opt-in**，不影响默认构建。
+这条是硬要求：任何人 clone 下来，不读文档、不配环境就能跑通。所以真实模型、向量数据库这些全都是可选的，不装也不影响默认流程。
 
 ---
 
-## 当前状态
+## 现在做到哪了
 
-> ⚠️ **项目处于早期开发阶段，尚不具备可用的诊断功能。** 以下为诚实进度。
+> 项目还在早期，**还不能诊断你自己的知识库**——目前只能用内置的演示文档。
+> 下面如实列出进度。
 
-| 模块 | 状态 |
+| 部分 | 状态 |
 |---|---|
-| 领域层三上下文 | ✅ 已完成骨架与核心算法 |
-| 切分策略 | ✅ 固定窗口、递归字符（2 / 5 种） |
-| 检索指标 | ✅ Recall@k、MRR（手算验证） |
-| 多路融合 | ✅ RRF（倒数排名融合） |
-| 架构门禁 | ✅ 5 条 ArchUnit 规则 |
-| nDCG 指标 | ⬜ 规划中 |
-| 向量检索 / BM25 / 重排实现 | ⬜ 规划中 |
-| CLI 诊断命令 | ⬜ 规划中（当前仅骨架） |
-| Agentic 诊断器 | ⬜ 规划中 |
+| 文档切分 | 固定窗口、递归字符（两种，计划五种） |
+| 召回 | 向量召回、关键词召回（BM25）、两者融合（RRF） |
+| 指标 | Recall@k、MRR、nDCG（都是手算验证过的） |
+| 诊断报告 | Markdown 格式，含逐条用例的命中位置 |
+| 命令行 | `diagnose` 一个命令，用内置演示语料 |
+| 架构测试 | 5 条规则，守住依赖方向 |
+| 重排 | 只有接口，没有实现 |
+| 读外部文档 | 未开始（现在只能用内置演示语料） |
+| 切分策略对比 | 未开始（现在只能对比召回方式） |
+| 让大模型自己决定试什么 | 未开始 |
 
-进度详情与下一步见 [`PROGRESS.md`](PROGRESS.md)。
+详细的进度、下一步和已知问题都在 [PROGRESS.md](PROGRESS.md)，那份文件是跨会话交接用的，写得很具体。
 
 ---
 
-## 设计原则
+## 几条我坚持的规矩
 
-| # | 原则 | 原因 |
-|---|---|---|
-| **R1** | `ragsight-domain` 零第三方运行时依赖 | 核心算法必须能在无网络、无数据库、无 API Key 下完整单测 |
-| **R2** | `ragsight-application` 只依赖 `domain` | 用例编排不该知道具体向量库/模型 |
-| **R3** | 外部能力以接口（端口）表达，实现在 infrastructure | 六边形架构，换实现零成本 |
-| **R4** | 默认路径零配置可用 | clone 后 `mvn verify` 必须全绿 |
-| **R5** | 诊断结果必须可复现 | 确定性算法，domain 层禁止引入随机性 |
+| 规矩 | 为什么 |
+|---|---|
+| 核心模块不引第三方库 | 算法要能离线验证，换实现不用改核心 |
+| 默认路径零配置能用 | 配不了环境的工具等于不能用 |
+| 结论必须可复现 | 同一输入跑两次结果不同，就没法拿它做决策 |
+| 测试和结论都基于实测数字 | 手算或实测过的才写进断言，不靠"感觉对" |
 
-R1 / R2 / R3 / R5 由 [ArchUnit 规则](ragsight-architecture-tests/src/test/java/cn/qiyec/ragsight/architecture/ArchitectureRulesTest.java)
-自动守护，**违反即构建失败**，不依赖人工 review。
+前四条里除"零配置"外，都由 [架构测试](ragsight-architecture-tests/src/test/java/cn/qiyec/ragsight/architecture/ArchitectureRulesTest.java) 自动检查，违反了构建会失败，不靠人记得。
 
 ---
 
@@ -167,30 +162,31 @@ R1 / R2 / R3 / R5 由 [ArchUnit 规则](ragsight-architecture-tests/src/test/jav
 
 | 文档 | 内容 |
 |---|---|
-| [`AGENTS.md`](AGENTS.md) | 项目定位、架构铁律、编码约定、上下文管理协议 |
-| [`PROGRESS.md`](PROGRESS.md) | 进度、下一步、已验证事实、已知技术债 |
-| [`docs/adr/`](docs/adr/) | 架构决策记录（每个决策的权衡与被否决方案） |
-| [`docs/setup/environment.md`](docs/setup/environment.md) | 环境要求与排查清单 |
+| [AGENTS.md](AGENTS.md) | 项目定位、要守的规矩、编码习惯 |
+| [PROGRESS.md](PROGRESS.md) | 进度、下一步、踩过的坑 |
+| [docs/adr/](docs/adr/) | 每个重要决定的原因，以及被否掉的方案 |
+| [docs/setup/environment.md](docs/setup/environment.md) | 环境要求和常见问题 |
 
-### 架构决策记录（ADR）
+### 重要决定
 
-| ADR | 决策 |
+| 决定 | 内容 |
 |---|---|
-| [001](docs/adr/001-two-layer-architecture.md) | 为什么分「确定性引擎 + Agentic 诊断器」两层 |
-| [002](docs/adr/002-domain-zero-dependencies.md) | 为什么 domain 层禁止任何第三方依赖 |
-| [003](docs/adr/003-why-diagnostic-tool-not-framework.md) | 为什么不做 Spring Boot 脚手架（含官方能力核查证据） |
+| [001](docs/adr/001-two-layer-architecture.md) | 为什么分成"算指标"和"决定试什么"两层 |
+| [002](docs/adr/002-no-third-party-in-core.md) | 为什么核心模块不许引第三方库 |
+| [003](docs/adr/003-why-diagnostic-tool-not-framework.md) | 为什么不做框架（附官方能力核查） |
+| [004](docs/adr/004-bm25-and-tokenizer-decoupling.md) | BM25 放哪、分词怎么解耦 |
 
 ---
 
 ## 明确不做
 
-写在最前面，避免误解与无谓的期待：
+先写在前面，省得误会：
 
-- ❌ **不做向量数据库** —— 已有成熟方案
-- ❌ **不做通用 RAG 框架** —— 与 AgentScope 官方 `extensions-rag` 直接冲突
-- ❌ **不做 Agent 编排平台** —— AgentScope Service 已覆盖
-- ❌ **不做文档格式全能支持** —— 先聚焦 Markdown 与 PDF
-- ❌ **不做 Web 产品形态** —— 先做 CLI + 报告
+- 不做向量数据库
+- 不做通用 RAG 框架
+- 不做 Agent 组织平台
+- 不做所有文档格式的支持（先支持 Markdown 和纯文本）
+- 不做 Web 界面（先做好命令行和报告）
 
 ---
 

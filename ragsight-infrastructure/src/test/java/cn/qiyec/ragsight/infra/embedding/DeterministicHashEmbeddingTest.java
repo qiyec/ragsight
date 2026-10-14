@@ -32,7 +32,7 @@ class DeterministicHashEmbeddingTest {
     }
 
     @Test
-    @DisplayName("同一文本两次编码必须完全一致（可复现性，铁律 R5）")
+    @DisplayName("同一文本两次编码必须完全一致（可复现性，R5）")
     void should_be_deterministic() {
         float[] first = embedding.embedOne("数据库连接池配置说明");
         float[] second = embedding.embedOne("数据库连接池配置说明");

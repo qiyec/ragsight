@@ -54,8 +54,8 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose
 | Maven Wrapper | 锁定 3.9.9，走阿里云镜像 |
 | Enforcer | 强制 JDK 17+ / Maven 3.8+，不满足时中文报错 |
 | `.gitattributes` | `mvnw` 强制 LF（否则 Linux 报 bad interpreter） |
-| AGENTS.md | 新会话第一读物：定位、铁律、约定、上下文协议 |
-| ADR 001-004 | 两层架构 / domain 零依赖 / 为何不做框架 / BM25 归属 |
+| AGENTS.md | 新会话第一读物：定位、规矩、约定、上下文协议 |
+| ADR 001-004 | 两层架构 / 核心不引第三方库 / 为何不做框架 / BM25 放哪 |
 | README / LICENSE / CI | Apache-2.0；GitHub Actions 矩阵构建（JDK 17 + 21，全绿） |
 
 > ⚠️ **已移除**：曾加过"`~/.m2/toolchains.xml` 存在即激活"的 Toolchains profile，
@@ -69,12 +69,12 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose
 | 层 | 内容 |
 |---|---|
 | **knowledge** | `Document` / `Chunk` / `ChunkId` / `DocumentId`；`FixedWindow`、`RecursiveCharacter` 两种切分策略 |
-| **retrieval** | `ScoredChunk` / `RetrievalSource`；端口 `Retriever` / `Reranker` / `EmbeddingModel` / `VectorIndex` / `Tokenizer`；算法 `ReciprocalRankFusion`（RRF）、`Bm25Scorer`（BM25） |
-| **evaluation** | `GoldenCase` / `EvaluationSet`（聚合根）/ `RetrievedEvidence`；指标 `RecallAtK` / `MRR` / `NDCG`（全部手算验证） |
-| **application** | `DiagnosisEngine`（诊断用例）/ `RetrieverConfig` / `DiagnosisRequest` / `DiagnosisReport` / `ExperimentResult` / `CaseOutcome`；端口 `RetrieverFactory` |
+| **retrieval** | `ScoredChunk` / `RetrievalSource`；接口 `Retriever` / `Reranker` / `EmbeddingModel` / `VectorIndex` / `Tokenizer`；算法 `ReciprocalRankFusion`（RRF）、`Bm25Scorer`（BM25） |
+| **evaluation** | `GoldenCase` / `EvaluationSet`（核心类）/ `RetrievedEvidence`；指标 `RecallAtK` / `MRR` / `NDCG`（全部手算验证） |
+| **application** | `DiagnosisEngine`（诊断用例）/ `RetrieverConfig` / `DiagnosisRequest` / `DiagnosisReport` / `ExperimentResult` / `CaseOutcome`；接口 `RetrieverFactory` |
 | **infrastructure** | `DeterministicHashEmbedding`（离线向量化）/ `InMemoryVectorIndex` / `VectorRetriever` / `Bm25Retriever` / `HybridRetriever` / `TextTokenizer` / `SimpleTokenizer` / `CompositeRetrieverFactory` |
 | **cli** | `RagSightCli` + `DiagnoseCommand`；`DemoCorpus` + `DemoEvaluationSet` + `ReportRenderer`（Markdown） |
-| **architecture-tests** | 5 条 ArchUnit 规则，把铁律变成构建门禁 |
+| **architecture-tests** | 5 条 ArchUnit 规则，把规矩变成构建门禁 |
 
 **测试分布**：domain 80 / infrastructure 56 / architecture 5 = **141 个，全部通过**。
 
@@ -104,7 +104,7 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose
 4. **`DiagnosisEngine` 支持切分策略作为实验变量**
    —— 现在语料是切分后的结果传入，尚未支持"对比不同切分策略"
 5. **`Reranker` 实现 + `LexicalOverlapReranker`**
-   —— 端口已有，无实现；报告结论目前无法给出"该不该加重排"的建议
+   —— 接口已有，无实现；报告结论目前无法给出"该不该加重排"的建议
 6. **HTML 报告**（Markdown 已够用，优先级低于上面几项）
 7. **`docs/learn/` 学习文档**：每个知识点配可运行验证
 
@@ -136,7 +136,7 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose
 | 3 | 只能用内置演示语料 | 无法诊断真实知识库 | 接入 `--corpus <path>` |
 | 4 | 切分策略尚不能作为实验变量 | 报告无法回答"该不该改切分" | 需要重构请求模型 |
 | 5 | 无 `Reranker` 实现 | 报告无法建议"该不该加重排" | 实现 `LexicalOverlapReranker` |
-| 6 | 离线 embedding 无真实语义能力 | 绝对指标不代表真实模型 | 已接入端口；需真实模型适配器（可选） |
+| 6 | 离线 embedding 无真实语义能力 | 绝对指标不代表真实模型 | 已接入接口；需真实模型适配器（可选） |
 | 7 | 无 `docs/learn/` 学习文档 | 学习价值未落地 | 后续 |
 | 8 | 演示语料规模小（15 片段） | 指标区分度有限 | 接入外部语料后自然解决 |
 
@@ -148,7 +148,7 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose
 |---|---|---|
 | 1 | 仓库名 `ragsight` | ✅ 已确认 |
 | 2 | 推送到 GitHub | ✅ 已完成 |
-| 3 | BM25 归属 | ✅ ADR-004：算法在 domain，分词抽成端口 |
+| 3 | BM25 归属 | ✅ ADR-004：算法在 domain，分词抽成接口 |
 | 4 | 评测集用哪份公开语料 | ⏳ 建议用 ragsight 自己的文档（AGENTS.md + ADR），自举且可复现 |
 | 5 | 是否需要真实 embedding 适配器 | ⏳ 视是否有可用 API Key |
 
@@ -158,9 +158,9 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose
 
 | 文件 | 内容 |
 |---|---|
-| `AGENTS.md` | 项目定位、铁律、编码约定、上下文管理协议 |
+| `AGENTS.md` | 项目定位、规矩、编码约定、上下文管理协议 |
 | `docs/adr/001-two-layer-architecture.md` | 为什么分两层 |
-| `docs/adr/002-domain-zero-dependencies.md` | 为什么 domain 零依赖 |
+| `docs/adr/002-no-third-party-in-core.md` | 为什么核心模块不引第三方库 |
 | `docs/adr/003-why-diagnostic-tool-not-framework.md` | 为什么不造框架（含官方能力核查证据） |
-| `docs/adr/004-bm25-in-domain-tokenizer-as-port.md` | BM25 归属与分词端口化 |
+| `docs/adr/004-bm25-and-tokenizer-decoupling.md` | BM25 归属与分词抽成接口 |
 | `docs/setup/environment.md` | 环境要求、实测状态、排查清单 |

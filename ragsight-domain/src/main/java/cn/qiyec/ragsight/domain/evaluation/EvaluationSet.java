@@ -6,13 +6,14 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 评测集——评估上下文的聚合根。
+ * 测试集：一组标注好的用例。
  *
- * <p>负责维护整个标注集合的**不变式**：用例 id 唯一。
- * 这是聚合根存在的理由：id 重复会让"按用例归因"直接失真，
- * 而这个约束只有在集合层面才能校验。
+ * <p>它负责把关一件事：<b>用例 id 不能重复</b>。
+ * 这个检查只能放在集合这一层做，因为单个用例看不到别的用例。
+ * 为什么重要：id 重复会让"按用例查失败原因"直接失真——
+ * 报告里说"q-001 没召回到"，但你不知道是哪个 q-001。
  *
- * <p>只读使用：构造后不可变，可安全地在多次实验之间复用同一份评测集。
+ * <p>构造完之后不可变，所以同一份测试集可以反复用于多次实验。
  */
 public record EvaluationSet(String name, List<GoldenCase> cases) {
 
@@ -25,7 +26,7 @@ public record EvaluationSet(String name, List<GoldenCase> cases) {
         }
         cases = List.copyOf(cases);
 
-        // 聚合根的核心职责：保证用例 id 唯一
+        // 这个类最关键的职责：保证用例 id 唯一
         Map<String, Long> duplicated = cases.stream()
                 .collect(java.util.stream.Collectors.groupingBy(
                         GoldenCase::id, java.util.stream.Collectors.counting()));

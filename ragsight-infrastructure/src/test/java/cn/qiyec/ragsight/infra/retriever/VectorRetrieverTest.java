@@ -118,7 +118,7 @@ class VectorRetrieverTest {
     }
 
     @Test
-    @DisplayName("相同输入两次检索必须结果一致（可复现性，铁律 R5）")
+    @DisplayName("相同输入两次检索必须结果一致（可复现性，R5）")
     void should_be_deterministic() {
         List<Chunk> corpus = List.of(
                 chunk("d", 0, "计费规则与账单说明"),

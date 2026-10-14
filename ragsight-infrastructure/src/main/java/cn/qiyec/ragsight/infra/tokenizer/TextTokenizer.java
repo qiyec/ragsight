@@ -15,7 +15,7 @@ import java.util.List;
  * <p><b>为什么中文按单字而不是引入分词库</b>：引入分词库会给
  * infrastructure 增加较重依赖，且分词器本身应当是一个可对比的实验变量
  * （见 ADR-004）。按单字切分配合倒排与向量检索，对中文字面重合场景已经有效。
- * 将来若引入专业分词器，只需替换 {@code Tokenizer} 端口的实现。
+ * 将来若引入专业分词器，只需替换 {@code Tokenizer} 接口的实现。
  */
 public final class TextTokenizer {
 

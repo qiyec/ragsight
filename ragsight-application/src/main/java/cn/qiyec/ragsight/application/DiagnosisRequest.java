@@ -43,7 +43,7 @@ public record DiagnosisRequest(
         configs = List.copyOf(configs);
 
         // 配置 id 重复会让报告无法区分行——这个约束与 EvaluationSet 维护
-        // "用例 id 唯一" 同理，属于集合层面的不变式
+        // "用例 id 唯一" 同理，属于集合层面的规则
         List<String> ids = configs.stream().map(RetrieverConfig::id).toList();
         if (ids.stream().distinct().count() != ids.size()) {
             throw new IllegalArgumentException("检索配置 id 重复，报告将无法区分：" + ids);
