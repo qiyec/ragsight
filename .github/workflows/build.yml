@@ -18,21 +18,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 17 是项目基线；21 用于验证向上兼容（不要求，但失败会暴露问题）
+        # 17 是项目基线（与 AgentScope 官方一致）；
+        # 21 用于验证向上兼容——不要求支持，但失败能提前暴露问题。
         java: [ '17', '21' ]
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 安装 JDK ${{ matrix.java }}
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: ${{ matrix.java }}
 
       - name: 缓存 Maven 依赖
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-m2-${{ matrix.java }}-${{ hashFiles('**/pom.xml') }}
@@ -40,15 +41,17 @@ jobs:
             ${{ runner.os }}-m2-${{ matrix.java }}-
             ${{ runner.os }}-m2-
 
-      # 不依赖 Maven Wrapper 下载（它会从阿里云拉 Maven 发行版，
-      # 在 GitHub 的海外 runner 上可能超时）。CI 直接用 runner 自带的 Maven，
-      # 版本由 setup-java 保证足够新。开发者本地仍走 mvnw。
+      # 为什么 CI 用 mvn 而不是仓库自带的 mvnw：
+      # mvnw 的 distributionUrl 指向阿里云（为国内网络优化），
+      # 而 GitHub 的海外 runner 访问阿里云可能超时。
+      # CI 直接用 runner 自带的 Maven，版本由环境保证足够新；
+      # 开发者本地仍走 mvnw。
       - name: 构建与测试
         run: mvn -B --no-transfer-progress verify
 
       - name: 上传测试报告
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: surefire-reports-jdk${{ matrix.java }}
           path: '**/target/surefire-reports/*'
