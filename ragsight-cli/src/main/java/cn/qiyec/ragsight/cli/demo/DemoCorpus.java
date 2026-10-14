@@ -1,30 +1,25 @@
 package cn.qiyec.ragsight.cli.demo;
 
-import cn.qiyec.ragsight.domain.knowledge.Chunk;
-import cn.qiyec.ragsight.domain.knowledge.ChunkId;
 import cn.qiyec.ragsight.domain.knowledge.Document;
-import cn.qiyec.ragsight.domain.knowledge.DocumentId;
-import cn.qiyec.ragsight.domain.knowledge.chunking.ChunkingStrategy;
-import cn.qiyec.ragsight.domain.knowledge.chunking.RecursiveCharacterChunkingStrategy;
+import cn.qiyec.ragsight.domain.knowledge.DocumentReader;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 内置演示语料——一个虚构的 SaaS 产品帮助中心。
+ * 内置的演示文档——一个虚构的 SaaS 产品帮助中心。
  *
- * <p><b>为什么需要内置语料</b>：让 `rag diagnose` 在 clone 之后无需任何
- * 外部数据即可跑出真实诊断报告。没有它，用户看到的是一个"需要先准备
- * 语料和评测集"的空工具，无法在 5 分钟内理解它能做什么。
+ * <p><b>为什么需要它</b>：让人在 clone 之后不用准备任何数据，
+ * 一条命令就能看到诊断报告长什么样。否则用户面对的是一个
+ * "请先准备文档和测试集"的空工具，五分钟内理解不了它能干什么。
  *
- * <p>语料刻意设计成包含**多种检索难点**，使诊断报告有内容可讲：
+ * <p>文档刻意包含了不同的检索难点，报告才有内容可讲：
  * <ul>
- *   <li>精确编号（错误码、SKU）—— 向量路的弱项，关键词路的强项</li>
- *   <li>同义改写查询 —— 关键词路的弱项</li>
- *   <li>分散在多段的信息 —— 需要足够召回量</li>
+ *   <li>精确编号（错误码）——向量召回容易漏，关键词召回占优</li>
+ *   <li>同义改写的问题——关键词召回容易漏</li>
+ *   <li>分散在多段里的信息——需要召回量够</li>
  * </ul>
  *
- * <p>这是**演示数据**，不是真实产品文档。指标仅用于说明工具的输出形态，
+ * <p>这是**演示数据**，不是真实产品文档。指标只用来说明工具的输出长什么样，
  * 不代表任何真实系统的表现。
  */
 public final class DemoCorpus {
@@ -44,7 +39,7 @@ public final class DemoCorpus {
 
                         计费项包括三部分：计算资源、存储空间和网络流量。
                         计算资源按实例运行时长计费，不足一分钟按一分钟计算。
-                        存储空间按实际占用量计费，每日采样一次取当月峰值。
+                        存储空间按实际占用量计费，每日采样一次，取当月峰值。
                         网络流量按出站流量计费，入站流量免费。
 
                         如需调整计费方式，请在账单中心提交申请，审核通过后次月生效。
@@ -53,12 +48,12 @@ public final class DemoCorpus {
                         """
                         账单异常处理
 
-                        当账单出现异常时，请先检查以下常见原因：
-                        账户余额不足会导致实例自动停机，恢复余额后需手动重启实例。
-                        计费项突增通常是因为存储空间峰值上涨或出站流量增加。
+                        当账单出现异常时，请先检查以下常见原因。
+                        账户余额不足会导致实例自动停机，恢复余额后需要手动重启实例。
+                        计费项突增通常是因为存储空间峰值上涨，或者出站流量增加。
 
                         若确认账单金额与预期不符，可通过工单系统提交申诉。
-                        申诉时需要提供账单编号和异常时间段的实例列表。
+                        申诉时需要提供账单编号，以及异常时间段的实例列表。
 
                         常见的账单相关错误码：
                         错误码 E4021 表示计费账户被冻结，需要联系客户经理解冻。
@@ -94,62 +89,32 @@ public final class DemoCorpus {
 
                         如需临时扩容，可在控制台提交扩容申请，通常 10 分钟内生效。
                         永久扩容需要变更套餐，在下一个计费周期生效。
-                        """),
-                Document.of("release-notes",
-                        """
-                        版本发布记录
-
-                        本页面记录产品的功能更新与变更。
-
-                        近期更新包括控制台界面改版、账单导出功能上线、
-                        以及存储配额预警通知的优化。具体版本号与时间请参见控制台公告。
                         """));
     }
 
     /**
-     * 对演示文档执行切分，得到语料片段。
+     * 以"读文档"的形式提供演示语料。
      *
-     * <p><b>切分参数的选取对演示效果至关重要</b>：
-     * 若窗口过大（如 300），每篇文档只会切出 1 个片段——语料总量与 topK 相当，
-     * 等于"每次都返回全部内容"，Recall 恒为 1.0，诊断就失去意义。
-     * 因此这里取较小的窗口（90 字符），使每篇文档切成多个片段，
-     * 让"能否召回正确片段"成为真实的挑战。
-     *
-     * <p>这个教训本身也是诊断工具要传达的东西：<b>切分粒度过大会让检索
-     * 看起来"永远正确"</b>，直到语料增长后才暴露出问题。
-     *
-     * @return 可直接送入诊断引擎的片段列表
+     * <p>刻意做成和 {@code DirectoryDocumentReader} 一样的接口，
+     * 这样内置演示和读外部目录走的是**完全相同**的流程——
+     * 演示能跑通就说明真实路径也能跑通，不需要维护两套代码。
      */
-    public static List<Chunk> chunked() {
-        ChunkingStrategy strategy = new RecursiveCharacterChunkingStrategy(90, 18);
-        List<Chunk> all = new ArrayList<>();
-        for (Document document : documents()) {
-            all.addAll(strategy.chunk(document));
-        }
-        return List.copyOf(all);
+    public static DocumentReader reader() {
+        return new DocumentReader() {
+            @Override
+            public List<Document> readAll() {
+                return documents();
+            }
+
+            @Override
+            public String describe() {
+                return "内置演示文档（虚构的 SaaS 产品帮助中心）";
+            }
+        };
     }
 
     /** 语料名称，用于报告标题。 */
     public static String corpusName() {
-        return "演示语料：SaaS 产品帮助中心（5 篇文档）";
-    }
-
-    /**
-     * 供归因分析：按片段 id 找到片段文本。
-     *
-     * <p>演示场景下评测集直接用片段 id 标注，
-     * 因此需要能反查到文本以便在报告中展示命中的证据内容。
-     */
-    public static String textOf(List<Chunk> corpus, String chunkId) {
-        return corpus.stream()
-                .filter(c -> c.id().toString().equals(chunkId))
-                .map(Chunk::text)
-                .findFirst()
-                .orElse("(未找到)");
-    }
-
-    /** 供评测集标注使用：构造片段 id。 */
-    public static ChunkId id(String docId, int ordinal) {
-        return new ChunkId(DocumentId.of(docId), ordinal);
+        return "演示语料：SaaS 产品帮助中心";
     }
 }

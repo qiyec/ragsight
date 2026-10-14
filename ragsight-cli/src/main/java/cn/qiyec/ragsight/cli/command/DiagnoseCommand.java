@@ -3,12 +3,15 @@ package cn.qiyec.ragsight.cli.command;
 import cn.qiyec.ragsight.application.DiagnosisEngine;
 import cn.qiyec.ragsight.application.DiagnosisReport;
 import cn.qiyec.ragsight.application.DiagnosisRequest;
+import cn.qiyec.ragsight.application.ExperimentPlan;
+import cn.qiyec.ragsight.application.GoldenCaseSetSpec;
 import cn.qiyec.ragsight.application.RetrieverConfig;
 import cn.qiyec.ragsight.cli.demo.DemoCorpus;
 import cn.qiyec.ragsight.cli.demo.DemoEvaluationSet;
 import cn.qiyec.ragsight.cli.report.ReportRenderer;
-import cn.qiyec.ragsight.domain.evaluation.EvaluationSet;
-import cn.qiyec.ragsight.domain.knowledge.Chunk;
+import cn.qiyec.ragsight.domain.knowledge.Document;
+import cn.qiyec.ragsight.domain.knowledge.DocumentReader;
+import cn.qiyec.ragsight.domain.knowledge.chunking.RecursiveCharacterChunkingStrategy;
 import cn.qiyec.ragsight.infra.embedding.DeterministicHashEmbedding;
 import cn.qiyec.ragsight.infra.index.InMemoryVectorIndex;
 import cn.qiyec.ragsight.infra.reader.CorpusPreparation;
@@ -21,41 +24,38 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
 
 /**
- * {@code diagnose} 命令：对一批文档跑一次检索质量诊断。
+ * {@code diagnose} 命令：对一批文档跑检索质量诊断。
  *
  * <p>两种用法：
  * <ul>
- *   <li>不带参数：用内置的演示文档，一条命令就能看到报告长什么样</li>
+ *   <li>不带参数：用内置演示文档，一条命令就能看到报告长什么样</li>
  *   <li>指定 {@code --corpus} 和 {@code --eval}：诊断你自己的文档</li>
  * </ul>
  *
- * <p>刻意不提供"只跑某一种召回方式"的选项。诊断的价值来自**对比**，
- * 只有一个配置的绝对分数回答不了"该不该改"。
+ * <p>默认会对比几种切分方式和几种召回方式的组合，所以报告能回答
+ * "该调切分还是该换召回"这类问题。只跑一种方案的话，
+ * 绝对分数回答不了"该不该改"。
  */
 @Command(
         name = "diagnose",
         mixinStandardHelpOptions = true,
-        description = "对一批文档跑检索质量诊断，输出各配置的指标对比与结论。"
+        description = "对一批文档跑检索质量诊断，输出各种组合的指标对比与结论。"
 )
 public final class DiagnoseCommand implements Callable<Integer> {
 
     private static final int DEFAULT_TOP_K = 5;
 
-    /** 默认切分窗口。这个值会影响片段数量和召回难度，所以做成可调的。 */
-    private static final int DEFAULT_CHUNK_SIZE = 90;
-
-    private static final int DEFAULT_CHUNK_OVERLAP = 18;
-
     @Option(names = {"-c", "--corpus"},
-            description = "文档目录。不指定则使用内置演示文档。")
+            description = "文档目录。不指定就用内置演示文档。")
     private Path corpusDir;
 
     @Option(names = {"-e", "--eval"},
-            description = "评测集文件。指定了 --corpus 就必须同时指定它。"
+            description = "测试集文件。指定了 --corpus 就必须同时指定它。"
                     + "格式见 examples/eval-format.txt。")
     private Path evalFile;
 
@@ -65,16 +65,18 @@ public final class DiagnoseCommand implements Callable<Integer> {
     private int topK;
 
     @Option(names = {"--chunk-size"},
-            description = "切分窗口大小，单位是字符（默认 ${DEFAULT-VALUE}）。"
-                    + "调小会让片段变多变碎，召回难度上升。",
-            defaultValue = "" + DEFAULT_CHUNK_SIZE)
-    private int chunkSize;
+            description = "额外加一个自定义切分：窗口大小，单位字符。"
+                    + "不指定就只用内置的几组对比。")
+    private Integer chunkSize;
 
     @Option(names = {"--chunk-overlap"},
-            description = "相邻窗口的重叠字符数（默认 ${DEFAULT-VALUE}）。"
-                    + "重叠是为了避免答案正好被切在边界上。",
-            defaultValue = "" + DEFAULT_CHUNK_OVERLAP)
-    private int chunkOverlap;
+            description = "配合 --chunk-size 用：相邻窗口的重叠字符数（默认窗口的 20%）")
+    private Integer chunkOverlap;
+
+    @Option(names = {"--only-chunking"},
+            description = "只跑一个切分方案，不和别的切分对比。"
+                    + "想快点看到结果时用，实验次数会少很多。")
+    private boolean onlyChunking;
 
     @Option(names = {"-o", "--output"},
             description = "把报告写到文件；不指定就打印到屏幕")
@@ -82,7 +84,7 @@ public final class DiagnoseCommand implements Callable<Integer> {
 
     @Option(names = {"--embedding-dim"},
             description = "离线向量维度（默认 ${DEFAULT-VALUE}）。"
-                    + "注意这是离线哈希向量化，只认字面，不代表真实模型效果。",
+                    + "注意这是离线哈希向量化，只认字面重合，不代表真实模型效果。",
             defaultValue = "" + DeterministicHashEmbedding.DEFAULT_DIMENSION)
     private int embeddingDimension;
 
@@ -101,79 +103,63 @@ public final class DiagnoseCommand implements Callable<Integer> {
     }
 
     private Integer run() throws IOException {
-        if (topK <= 0) {
-            System.err.println("--top-k 必须为正数，实际为 " + topK);
-            return 2;
-        }
-        if (chunkSize <= 0) {
-            System.err.println("--chunk-size 必须为正数，实际为 " + chunkSize);
-            return 2;
-        }
-        if (chunkOverlap < 0 || chunkOverlap >= chunkSize) {
-            System.err.println("--chunk-overlap 必须在 0 到 " + (chunkSize - 1)
-                    + " 之间（必须小于 --chunk-size），实际为 " + chunkOverlap);
-            return 2;
-        }
-        if (corpusDir != null && evalFile == null) {
-            System.err.println("指定了 --corpus 就必须同时指定 --eval。");
-            System.err.println("评测集用来告诉工具「哪些片段是正确答案」，没有它算不出指标。");
-            System.err.println("格式参考 examples/eval-format.txt。");
-            return 2;
-        }
-        if (corpusDir == null && evalFile != null) {
-            System.err.println("指定了 --eval 就必须同时指定 --corpus。");
-            return 2;
+        Integer invalid = validateOptions();
+        if (invalid != null) {
+            return invalid;
         }
 
-        // ---- 准备语料和测试集 ----
-        List<Chunk> corpus;
-        EvaluationSet evalSet;
+        // ---- 准备文档和测试集 ----
+        List<Document> documents;
+        GoldenCaseSetSpec caseSpec;
         String corpusName;
 
         if (corpusDir != null) {
-            CorpusPreparation preparation = CorpusPreparation.from(
-                    corpusDir, evalFile, chunkSize, chunkOverlap);
-            corpus = preparation.chunks();
+            CorpusPreparation preparation = CorpusPreparation.from(corpusDir, evalFile);
+            documents = preparation.documents();
+            caseSpec = preparation.caseSpec();
             corpusName = preparation.sourceDescription();
-            evalSet = preparation.caseSpec().materialize(corpus);
-
             if (!quiet) {
                 System.err.println("文档目录：" + corpusDir.toAbsolutePath());
-                System.err.println("读到的文档数：" + preparation.documents().size());
-                System.err.println("切分后片段数：" + corpus.size()
-                        + "（窗口 " + chunkSize + "，重叠 " + chunkOverlap + "）");
-                System.err.println("测试集：" + evalSet.name() + "，"
-                        + evalSet.size() + " 个用例（负样本 " + evalSet.negativeCount() + " 个）");
+                System.err.println("读到的文档数：" + documents.size());
             }
         } else {
-            corpus = CompositeRetrieverFactory.requireUniqueIds(DemoCorpus.chunked());
-            evalSet = DemoEvaluationSet.build(corpus);
+            DocumentReader reader = DemoCorpus.reader();
+            documents = reader.readAll();
+            caseSpec = DemoEvaluationSet.build();
             corpusName = DemoCorpus.corpusName();
-
             if (!quiet) {
                 System.err.println("使用内置演示文档（想诊断自己的文档，加 --corpus 和 --eval）");
-                System.err.println("切分后片段数：" + corpus.size());
+                System.err.println("读到的文档数：" + documents.size());
             }
         }
 
+        // ---- 要对比哪些方案 ----
+        List<ExperimentPlan> plans = buildPlans();
+        List<RetrieverConfig> retrievers = RetrieverConfig.standardBaselines();
+
         if (!quiet) {
+            System.err.println("测试集：" + caseSpec.name() + "，"
+                    + caseSpec.size() + " 个用例（负样本 " + caseSpec.negativeCount() + " 个）");
+            System.err.println("对比方案：" + plans.size() + " 种切分 × "
+                    + retrievers.size() + " 种召回 = "
+                    + (plans.size() * retrievers.size()) + " 次实验");
             System.err.println("向量化方式：离线哈希，只认字面重合，"
-                    + "因此下面的绝对分数不代表真实 embedding 模型的效果");
+                    + "所以下面的绝对分数不代表真实 embedding 模型的效果");
             System.err.println();
         }
 
-        // ---- 装配。每个配置拿到独立索引，避免实验之间互相污染 ----
-        CompositeRetrieverFactory factory = new CompositeRetrieverFactory(
+        DiagnosisRequest request = new DiagnosisRequest(
+                corpusName, documents, caseSpec, plans, retrievers);
+
+        // 每个切分方案切出来的片段不一样，所以检索器要按对应的那批片段现造，
+        // 不能共用一个——共用会让后一个方案覆盖前一个的索引，结果互相污染
+        DiagnosisEngine engine = new DiagnosisEngine(corpus -> new CompositeRetrieverFactory(
                 () -> new DeterministicHashEmbedding(embeddingDimension),
                 InMemoryVectorIndex::new,
                 SimpleTokenizer::new,
-                corpus);
+                corpus));
 
-        // 基准取第一个配置——调用方应该把"现在线上用的方案"放在第一位
-        List<RetrieverConfig> configs = RetrieverConfig.standardBaselines(topK);
-        DiagnosisRequest request = new DiagnosisRequest(corpusName, corpus, evalSet, configs);
-
-        DiagnosisReport report = new DiagnosisEngine(factory).diagnose(request);
+        DiagnosisReport report = engine.diagnose(request);
 
         // ---- 输出 ----
         String markdown = ReportRenderer.render(report);
@@ -191,5 +177,66 @@ public final class DiagnoseCommand implements Callable<Integer> {
         }
 
         return 0;
+    }
+
+    /** 决定要对比哪些切分方案。 */
+    private List<ExperimentPlan> buildPlans() {
+        if (chunkSize != null) {
+            int overlap = chunkOverlap != null
+                    ? chunkOverlap
+                    : Math.max(1, (int) Math.round(chunkSize * 0.2));
+            ExperimentPlan custom = new ExperimentPlan(
+                    "custom-" + chunkSize,
+                    "递归切分 " + chunkSize + " 字",
+                    new RecursiveCharacterChunkingStrategy(chunkSize, overlap),
+                    topK);
+            if (onlyChunking) {
+                return List.of(custom);
+            }
+            // 自定义的放最前面当基准：加这个参数的人通常就是想拿它和现状比
+            List<ExperimentPlan> plans = new ArrayList<>();
+            plans.add(custom);
+            plans.addAll(ExperimentPlan.standardBaselines(topK));
+            return List.copyOf(plans);
+        }
+
+        if (onlyChunking) {
+            return List.of(ExperimentPlan.recursiveDefault(topK));
+        }
+        return ExperimentPlan.standardBaselines(topK);
+    }
+
+    /** 检查参数。返回 {@code null} 表示都合法。 */
+    private Integer validateOptions() {
+        if (topK <= 0) {
+            System.err.println("--top-k 必须为正数，实际为 " + topK);
+            return 2;
+        }
+        if (chunkSize != null && chunkSize <= 0) {
+            System.err.println("--chunk-size 必须为正数，实际为 " + chunkSize);
+            return 2;
+        }
+        if (chunkOverlap != null) {
+            if (chunkSize == null) {
+                System.err.println("--chunk-overlap 要配合 --chunk-size 一起用。");
+                return 2;
+            }
+            if (chunkOverlap < 0 || chunkOverlap >= chunkSize) {
+                System.err.println("--chunk-overlap 必须在 0 到 " + (chunkSize - 1)
+                        + " 之间（必须小于 --chunk-size），实际为 " + chunkOverlap);
+                return 2;
+            }
+        }
+        if (corpusDir != null && evalFile == null) {
+            System.err.println("指定了 --corpus 就必须同时指定 --eval。");
+            System.err.println("测试集用来告诉工具「哪些片段是正确答案」，没有它算不出指标。");
+            System.err.println("格式参考 examples/eval-format.txt。");
+            return 2;
+        }
+        if (corpusDir == null && evalFile != null) {
+            System.err.println("指定了 --eval 就必须同时指定 --corpus。");
+            return 2;
+        }
+        return null;
     }
 }

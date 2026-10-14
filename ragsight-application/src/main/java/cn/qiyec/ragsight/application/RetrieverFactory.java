@@ -3,27 +3,30 @@ package cn.qiyec.ragsight.application;
 import cn.qiyec.ragsight.domain.retrieval.Retriever;
 
 /**
- * 检索器工厂（接口）——按配置构建可执行的检索管道。
+ * 造检索器的接口——按方案和召回条数，造出一个能用的检索器。
  *
- * <p><b>为什么需要这个接口</b>：诊断用例（应用层）需要"能跑各种检索方案"，
- * 但构建检索器需要 embedding 模型、向量索引、分词器等具体实现——
- * 那些都属于基础设施。若应用层直接依赖它们，就违反了R2
- * （application 只能依赖 domain）。
+ * <p><b>为什么需要这个接口</b>：诊断流程要知道"能跑各种召回方案"，
+ * 但造检索器要用到向量模型、向量索引、分词器这些具体实现，
+ * 那些都在基础设施里。如果诊断流程直接依赖它们，就违反了
+ * "用例层只能依赖 domain"这条规矩。
  *
- * <p>因此把"按配置构建检索器"这个动作抽象成接口，由基础设施实现。
- * 这是核心不依赖具体实现中"驱动适配器"的标准形态。
+ * <p>所以把"按方案造检索器"这个动作抽成接口，由基础设施去实现。
  *
- * <p>工厂应当是无状态的：同一配置多次调用应返回等价能力的检索器。
+ * <p>实现应该是无状态的：同一个方案调两次，应该得到能力等价的两个检索器。
  */
 @FunctionalInterface
 public interface RetrieverFactory {
 
     /**
-     * 按配置构建检索器。
+     * 按方案造一个检索器。
      *
-     * @param config 检索管道配置
-     * @return 可执行检索的实例
-     * @throws IllegalArgumentException 配置不受支持时
+     * <p>召回条数由调用方传进来，而不是存在方案里——它是实验条件的一部分，
+     * 同一套召回方案可能要按不同条数各跑一次（见 {@link ExperimentPlan}）。
+     *
+     * @param config 召回方案
+     * @param topK   每种召回方式取前几条，必须为正
+     * @return 可以执行召回的实例
+     * @throws IllegalArgumentException 方案不被支持时
      */
-    Retriever create(RetrieverConfig config);
+    Retriever create(RetrieverConfig config, int topK);
 }

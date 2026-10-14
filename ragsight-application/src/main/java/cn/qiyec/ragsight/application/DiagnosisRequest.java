@@ -1,57 +1,85 @@
 package cn.qiyec.ragsight.application;
 
-import cn.qiyec.ragsight.domain.evaluation.EvaluationSet;
-import cn.qiyec.ragsight.domain.knowledge.Chunk;
+import cn.qiyec.ragsight.domain.knowledge.Document;
 
 import java.util.List;
 
 /**
- * 诊断请求——一次诊断实验的输入。
+ * 一次诊断的输入。
  *
- * <p>三个要素固定：<b>语料</b>（测什么知识库）、<b>评测集</b>（用什么标尺）、
- * <b>配置列表</b>（对比哪些检索方案）。
+ * <p>装三样东西：<b>文档</b>（测哪个知识库）、<b>测试集</b>（用什么尺子）、
+ * <b>要对比的方案</b>（切分方案有哪些、召回方案有哪些）。
  *
- * <p>语料以 {@link Chunk} 列表形式传入而非文档——切分是上游步骤，
- * 这样"切分策略"本身也能成为实验变量：换一种切分策略会得到不同的
- * Chunk 列表，从而在同一套诊断流程里被对比（见 ADR-001 的两层设计）。
+ * <p><b>为什么传文档而不是传切好的片段</b>：
+ * 如果传的是切好的片段，就意味着切分已经在外面做完了，
+ * 那"对比不同切分"就没法做了——一个请求只能有一种切分结果。
+ * 所以这里传原始文档，由诊断过程按各个切分方案分别切一遍。
  *
- * @param corpusName 语料名称，用于报告标识
- * @param chunks     已切分的语料片段
- * @param evalSet    评测集
- * @param configs    要对比的检索配置，至少一个
+ * <p>测试集也用"还没落到片段上"的形式（{@link GoldenCaseSetSpec}）：
+ * 期望文字要在每个切分方案下重新找一遍对应片段，
+ * 因为不同切分切出来的片段不一样。
+ *
+ * @param corpusName 语料名称，出现在报告标题里
+ * @param documents  原始文档
+ * @param caseSpec   测试集描述（还没对应到片段）
+ * @param chunkings  要对比的切分方案，至少一个
+ * @param retrievers 要对比的召回方案，至少一个
  */
 public record DiagnosisRequest(
         String corpusName,
-        List<Chunk> chunks,
-        EvaluationSet evalSet,
-        List<RetrieverConfig> configs) {
+        List<Document> documents,
+        GoldenCaseSetSpec caseSpec,
+        List<ExperimentPlan> chunkings,
+        List<RetrieverConfig> retrievers) {
 
     public DiagnosisRequest {
         if (corpusName == null || corpusName.isBlank()) {
             throw new IllegalArgumentException("语料名称不能为空");
         }
-        if (chunks == null || chunks.isEmpty()) {
-            throw new IllegalArgumentException("语料不能为空");
+        if (documents == null || documents.isEmpty()) {
+            throw new IllegalArgumentException("文档不能为空");
         }
-        if (evalSet == null) {
-            throw new IllegalArgumentException("评测集不能为空");
+        if (caseSpec == null) {
+            throw new IllegalArgumentException("测试集不能为空");
         }
-        if (configs == null || configs.isEmpty()) {
-            throw new IllegalArgumentException("至少需要一个检索配置");
+        if (chunkings == null || chunkings.isEmpty()) {
+            throw new IllegalArgumentException("至少需要一个切分方案");
         }
-        chunks = List.copyOf(chunks);
-        configs = List.copyOf(configs);
+        if (retrievers == null || retrievers.isEmpty()) {
+            throw new IllegalArgumentException("至少需要一个召回方案");
+        }
+        documents = List.copyOf(documents);
+        chunkings = List.copyOf(chunkings);
+        retrievers = List.copyOf(retrievers);
 
-        // 配置 id 重复会让报告无法区分行——这个约束与 EvaluationSet 维护
-        // "用例 id 唯一" 同理，属于集合层面的规则
-        List<String> ids = configs.stream().map(RetrieverConfig::id).toList();
-        if (ids.stream().distinct().count() != ids.size()) {
-            throw new IllegalArgumentException("检索配置 id 重复，报告将无法区分：" + ids);
+        // id 重复会让报告的两行长得一样，分不清哪个是哪个的结果
+        requireUniqueIds(chunkings.stream().map(ExperimentPlan::id).toList(), "切分方案");
+        requireUniqueIds(retrievers.stream().map(RetrieverConfig::id).toList(), "召回方案");
+    }
+
+    private static void requireUniqueIds(List<String> ids, String what) {
+        List<String> duplicated = ids.stream()
+                .filter(id -> ids.indexOf(id) != ids.lastIndexOf(id))
+                .distinct()
+                .toList();
+        if (!duplicated.isEmpty()) {
+            throw new IllegalArgumentException(
+                    what + "的 id 重复了，报告没法区分哪一行是哪个：" + duplicated);
         }
     }
 
-    /** 语料片段总数。 */
-    public int corpusSize() {
-        return chunks.size();
+    /** 文档数量。 */
+    public int documentCount() {
+        return documents.size();
+    }
+
+    /** 要跑多少次实验：切分数 × 召回数。 */
+    public int experimentCount() {
+        return chunkings.size() * retrievers.size();
+    }
+
+    /** 实验次数是否偏多。用于提醒用户可能要等一会儿。 */
+    public boolean isLargeRun() {
+        return experimentCount() > 9;
     }
 }

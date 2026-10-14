@@ -91,14 +91,17 @@ public final class CompositeRetrieverFactory implements RetrieverFactory {
     }
 
     @Override
-    public Retriever create(RetrieverConfig config) {
+    public Retriever create(RetrieverConfig config, int topK) {
         if (config == null) {
             throw new IllegalArgumentException("config 不能为空");
+        }
+        if (topK <= 0) {
+            throw new IllegalArgumentException("topK 必须为正数，实际为 " + topK);
         }
         return switch (config.kind()) {
             case VECTOR_ONLY -> buildVectorRetriever();
             case KEYWORD_ONLY -> buildKeywordRetriever();
-            case HYBRID_RRF -> buildHybridRetriever(config.topK());
+            case HYBRID_RRF -> buildHybridRetriever(topK);
         };
     }
 

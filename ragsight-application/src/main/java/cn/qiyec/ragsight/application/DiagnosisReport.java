@@ -4,62 +4,67 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 诊断报告——一次诊断的完整结论。
  *
- * <p>它是本工具的**最终交付物**：用户拿到的就是这份报告，
- * 并据此决定改什么、以及**不**改什么。
+ * <p>它是这个工具的最终交付物：用户拿到的就是它，并据此决定改什么、
+ * 以及**不**改什么。
  *
- * <p><b>为什么报告不引入 LLM 生成结论</b>：
- * 报告里的每个数字都必须是可复现的。结论（如"瓶颈在召回环节"）
- * 由确定性规则从指标推导，因此同一份输入永远得到同一份报告。
- * 用 LLM 润色措辞是可以的，但**判断必须来自数字**（见 ADR-001）。
+ * <p><b>为什么报告里的结论不用模型生成</b>：
+ * 每个数字都必须能复现。结论（比如"瓶颈在召回"）由固定规则从指标推出来，
+ * 所以同样的输入永远得到同样的报告。用模型润色措辞可以，
+ * 但**判断必须来自数字**。
  *
- * @param corpusName       语料名称
- * @param caseCount        评测集用例数
+ * @param corpusName      语料名称
+ * @param documentCount   文档数量
+ * @param caseIds         用例标识，顺序与测试集一致
  * @param negativeCaseCount 负样本数量
- * @param baselineConfigId 作为对比基准的配置 id
- * @param results          各实验的结果，键为配置 id，保持配置传入顺序
- * @param findings         诊断发现（确定性规则推导的结论）
+ * @param baselineId      作为基准的那次实验
+ * @param results         各次实验的结果，保持跑的顺序
+ * @param corpusSizes     各切分方案切出来的片段数
+ * @param findings        诊断结论
  */
 public record DiagnosisReport(
         String corpusName,
-        int caseCount,
-        long negativeCaseCount,
+        int documentCount,
         List<String> caseIds,
-        String baselineConfigId,
-        Map<String, ExperimentResult> results,
+        long negativeCaseCount,
+        ExperimentId baselineId,
+        Map<ExperimentId, ExperimentResult> results,
+        Map<String, Integer> corpusSizes,
         List<String> findings) {
 
     public DiagnosisReport {
         if (results == null || results.isEmpty()) {
-            throw new IllegalArgumentException("至少需要一个实验结果");
+            throw new IllegalArgumentException("至少需要一次实验的结果");
         }
-        if (baselineConfigId == null || !results.containsKey(baselineConfigId)) {
-            throw new IllegalArgumentException(
-                    "基准配置 id 必须在结果中存在：" + baselineConfigId);
+        if (baselineId == null || !results.containsKey(baselineId)) {
+            throw new IllegalArgumentException("基准实验必须在结果里：" + baselineId);
         }
         caseIds = caseIds == null ? List.of() : List.copyOf(caseIds);
         results = Map.copyOf(results);
+        corpusSizes = corpusSizes == null ? Map.of() : Map.copyOf(corpusSizes);
         findings = findings == null ? List.of() : List.copyOf(findings);
     }
 
     /** 取基准实验。 */
     public ExperimentResult baseline() {
-        return results.get(baselineConfigId);
+        return results.get(baselineId);
     }
 
-    /** 取指定配置的结果。 */
-    public ExperimentResult resultOf(String configId) {
-        ExperimentResult result = results.get(configId);
+    /** 取指定实验的结果。 */
+    public ExperimentResult resultOf(ExperimentId id) {
+        ExperimentResult result = results.get(id);
         if (result == null) {
-            throw new IllegalArgumentException("不存在该配置的结果：" + configId);
+            throw new IllegalArgumentException("没有这次实验的结果：" + id);
         }
         return result;
     }
 
-    /** 报告涉及的所有指标名，按首次出现顺序。 */
+    /** 报告里出现的所有指标名，按第一次出现的顺序。 */
     public List<String> metricNames() {
         return results.values().stream()
                 .findFirst()
@@ -68,38 +73,33 @@ public record DiagnosisReport(
     }
 
     /**
-     * 按指定指标对所有实验降序排名。
+     * 按指定指标把所有实验从高到低排。
      *
-     * <p>同分时按配置 id 排序，保证报告可复现。
+     * <p>同分时按实验标识排，保证报告可复现。
      */
     public List<ExperimentResult> rankedBy(String metricName) {
         return results.values().stream()
                 .sorted(Comparator
                         .comparingDouble((ExperimentResult r) -> r.score(metricName)).reversed()
-                        .thenComparing(r -> r.config().id()))
+                        .thenComparing(r -> r.id().toString()))
                 .toList();
     }
 
-    /**
-     * 找出指定指标的最优实验。
-     *
-     * <p>若最优实验就是基线，说明改动无收益——报告应明确说出来，
-     * 因为"这个改动不值得做"和"这个改动很有用"同样有价值。
-     */
+    /** 某个指标表现最好的那次实验。 */
     public ExperimentResult bestBy(String metricName) {
         return rankedBy(metricName).get(0);
     }
 
     /**
-     * 生成"相对基线"的对比视图：指标名 → 各配置相对基线的差值。
+     * 算出"相对基准"的变化：实验 → 指标 → 差值。
      *
-     * <p>这是报告最有价值的部分。用户不关心"混合检索的 Recall 是 0.81"，
-     * 而关心"比我现在用的方案好多少"。
+     * <p>这是报告里最有用的部分。用户不关心"混合检索的 Recall 是 0.81"，
+     * 关心的是"比我现在用的方案好多少"。
      */
-    public Map<String, Map<String, Double>> deltasAgainstBaseline() {
-        Map<String, Map<String, Double>> result = new LinkedHashMap<>();
-        for (Map.Entry<String, ExperimentResult> entry : results.entrySet()) {
-            if (entry.getKey().equals(baselineConfigId)) {
+    public Map<ExperimentId, Map<String, Double>> deltasAgainstBaseline() {
+        Map<ExperimentId, Map<String, Double>> result = new LinkedHashMap<>();
+        for (Map.Entry<ExperimentId, ExperimentResult> entry : results.entrySet()) {
+            if (entry.getKey().equals(baselineId)) {
                 continue;
             }
             result.put(entry.getKey(), entry.getValue().deltasAgainst(baseline()));
@@ -107,16 +107,41 @@ public record DiagnosisReport(
         return Map.copyOf(result);
     }
 
-    /** 实验数量。 */
+    /** 跑了多少次实验。 */
     public int experimentCount() {
         return results.size();
     }
 
-    /** 取指定下标用例的标识，供报告逐用例展示。 */
+    /** 用了多少种切分方案。 */
+    public int chunkingCount() {
+        return corpusSizes.size();
+    }
+
+    /** 用了多少种召回方案。 */
+    public int retrieverCount() {
+        return (int) results.values().stream()
+                .map(r -> r.retriever().id())
+                .distinct()
+                .count();
+    }
+
+    /** 分成几组（每种切分一组）。 */
+    public Set<String> chunkingIds() {
+        return results.values().stream()
+                .map(r -> r.plan().id())
+                .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+    }
+
+    /** 取指定下标用例的标识。 */
     public String caseIdAt(int caseIndex) {
         if (caseIndex < 0 || caseIndex >= caseIds.size()) {
             return "#" + (caseIndex + 1);
         }
         return caseIds.get(caseIndex);
+    }
+
+    /** 评估用例数量。 */
+    public int caseCount() {
+        return caseIds.size();
     }
 }
