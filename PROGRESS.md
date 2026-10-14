@@ -4,9 +4,10 @@
 > **纪律**：每个「✅ 已完成」必须附带**实际执行的命令 + 实际输出**，不接受"应该能跑"。
 
 - **最后更新**：2026-10-14
-- **当前阶段**：P2 检索管道（进行中）
-- **远程仓库**：https://github.com/qiyec/ragsight （public）
-- **最近提交**：`636ad28` chore: 移除误提交的 commitmsg.txt
+- **当前阶段**：P2 检索管道（向量链路已通，待补 BM25 与重排）
+- **远程仓库**：https://github.com/qiyec/ragsight （public，CI 全绿）
+- **最近提交**：`a59a37f` test(infra): 补齐向量索引与检索器的单元测试
+- **规模**：8 次提交 / 34 个 Java 文件 / 约 2790 行 / **97 个测试全部通过**
 
 ---
 
@@ -121,27 +122,31 @@ mvnw.cmd -pl ragsight-infrastructure -am test
 
 P2 尚未完成的部分：
 
-1. **`InMemoryVectorIndex` / `VectorRetriever` 尚无单元测试** ← 最优先
-2. **`BM25Retriever` 未实现** —— 关键词召回，混合检索的另一半
-3. **`LexicalOverlapReranker` 未实现** —— 重排阶段
-4. **`nDCG` 未实现** —— 需带手算验证测试
-5. **`DiagnosticReport` 聚合根 + `CaseOutcome` 未实现**
-6. **`ragsight-application` 仍为空** —— 用例编排层
+1. **`BM25Retriever` 未实现** —— 关键词召回，混合检索的另一半（**最高优先**）
+2. **`LexicalOverlapReranker` 未实现** —— 重排阶段
+3. **`nDCG` 未实现** —— 需带手算验证测试
+4. **`DiagnosticReport` 聚合根 + `CaseOutcome` 未实现**
+5. **`ragsight-application` 仍为空** —— 用例编排层
 
 ---
 
 ## ⏭️ 下一步（精确到文件）
 
-1. `ragsight-infrastructure`：补 `InMemoryVectorIndexTest`、`VectorRetrieverTest`
-   （重点：维度不匹配报错、空语料、同分排序稳定性、topK 截断）
-2. `ragsight-domain`：`Bm25Retriever` 需要词频统计——先确认它属于 domain 还是
-   infrastructure（**决策点**：BM25 是纯算法，倾向于放 domain；但它需要分词，
-   而分词实现可能依赖外部库）
-3. `ragsight-domain`：补 `nDCG` + 手算测试
-4. `ragsight-application`：`RunDiagnosisUseCase`
+1. **决策点**：`BM25Retriever` 放 domain 还是 infrastructure？
+   - BM25 是纯算法（词频/逆文档频率），倾向于放 **domain**
+   - 但它需要分词，若分词依赖外部库则会破坏 R1（domain 零依赖）
+   - **倾向方案**：分词抽成 domain 的 `Tokenizer` 端口，
+     BM25 本体（纯算法）放 domain，分词实现放 infrastructure
+   - 这条决策应写成 **ADR-004**
+2. `ragsight-domain`：`Bm25Retriever` + `Tokenizer` 端口（含手算测试）
+3. `ragsight-infrastructure`：`SimpleTokenizer`（复用哈希 embedding 的切词逻辑）
+4. `ragsight-domain`：补 `nDCG` + 手算测试
+5. 端到端打通：向量 + BM25 → RRF 融合 → 指标输出
+   —— **这是第一个能看到"诊断数据"的里程碑**
+6. `ragsight-application`：`RunDiagnosisUseCase`
    —— **同时**把 `archunit.properties` 的 `failOnEmptyShould` 改回 `true`
-5. `ragsight-domain`：`DiagnosticReport` 聚合根 + `CaseOutcome`
-6. 完整验证 + 提交 + 推送（**确认 CI 双 JDK 全绿**）
+7. `ragsight-domain`：`DiagnosticReport` 聚合根 + `CaseOutcome`
+8. 完整验证 + 提交 + 推送
 
 ---
 
