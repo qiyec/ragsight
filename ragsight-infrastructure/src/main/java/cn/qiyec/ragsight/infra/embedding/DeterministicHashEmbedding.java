@@ -1,6 +1,7 @@
 package cn.qiyec.ragsight.infra.embedding;
 
 import cn.qiyec.ragsight.domain.retrieval.EmbeddingModel;
+import cn.qiyec.ragsight.infra.tokenizer.TextTokenizer;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -100,40 +101,15 @@ public final class DeterministicHashEmbedding implements EmbeddingModel {
      * 零依赖约束，且分词器本身就是需要评估的变量）。按单字切分配合 hashing trick，
      * 对中文的字面重合检索已经足够有效。
      */
-    private static List<String> tokenize(String text) {
-        List<String> tokens = new ArrayList<>();
-        StringBuilder latin = new StringBuilder();
-
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (isCjk(c)) {
-                flushLatin(latin, tokens);
-                tokens.add(String.valueOf(c));
-            } else if (Character.isLetterOrDigit(c)) {
-                latin.append(Character.toLowerCase(c));
-            } else {
-                flushLatin(latin, tokens);
-            }
-        }
-        flushLatin(latin, tokens);
-        return tokens;
-    }
-
-    private static void flushLatin(StringBuilder latin, List<String> tokens) {
-        if (latin.length() > 0) {
-            tokens.add(latin.toString());
-            latin.setLength(0);
-        }
-    }
-
     /**
-     * 是否为中日韩表意文字或中文标点之外的汉字区段。
+     * 切词：委托给 {@link TextTokenizer}。
      *
-     * <p>范围参考 Unicode 基本汉字区与扩展 A 区。
+     * <p><b>为什么必须共用同一份切词实现</b>：BM25 也使用切词。
+     * 若向量路与关键词路各写一套规则，同一份语料在两条路上会被切成不同词元，
+     * 混合检索的效果就无法归因——你无法判断差异来自融合策略还是来自切词不一致。
      */
-    private static boolean isCjk(char c) {
-        return (c >= 0x4E00 && c <= 0x9FFF)     // CJK 统一表意文字
-                || (c >= 0x3400 && c <= 0x4DBF); // 扩展 A 区
+    private static List<String> tokenize(String text) {
+        return TextTokenizer.tokenize(text);
     }
 
     /** 复用 CRC32 实例会引入共享状态，这里每次新建以保证线程安全与确定性。 */
