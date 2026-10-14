@@ -42,3 +42,4 @@ logs/
 # 临时文件
 .commitmsg.tmp
 *.tmp
+commitmsg.txt
