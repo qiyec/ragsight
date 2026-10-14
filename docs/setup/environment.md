@@ -180,14 +180,32 @@ D:\develop\environment\Maven\apache-maven-3.8.8\conf\settings.xml
 
 ---
 
-## 6. 分项目切换 JDK（进阶）
+## 6. 关于 JDK 版本选择（本项目不使用 Toolchains）
 
-若需要**不同项目用不同 JDK**，推荐 **Maven Toolchains**，它不修改 PATH 或 `JAVA_HOME`：
+**结论：本项目不需要 Maven Toolchains。**
 
-1. 在 `~/.m2/toolchains.xml` 声明各 JDK 路径
-2. 在项目 `pom.xml` 用 `maven-toolchains-plugin` 声明所需版本
+理由：
 
-Scoop 的 `scoop reset <jdk包>` 只能做**全局切换**，无法按项目隔离，因此不作为本项目方案。
+1. 项目全量编译目标固定为 **Java 17**（`maven.compiler.release=17`）。
+   AgentScope 官方也是以 Java 17 为基线发布的（其 `pom.xml` 中
+   `<java.version>17</java.version>`），因此 **Agent 层同样不需要 JDK 21**。
+2. 不存在"模块 A 用 17、模块 B 用 21"的需求，Toolchains 的核心用途
+   （跨模块多 JDK）在本项目中无对应场景。
+3. JDK 版本门槛由 `maven-enforcer-plugin` 显式校验（低于 17 时给出中文提示），
+   已经覆盖了"防止用错 JDK"这一真实需求。
+
+> **曾经尝试过并已移除**：v0.1 开发期间加过一个"`~/.m2/toolchains.xml` 存在即激活"
+> 的 Toolchains profile。它在 GitHub Actions 上导致构建失败——
+> runner 自带的 `toolchains.xml` 里没有 JDK 17，profile 被隐式激活后报
+> `Cannot find matching toolchain definitions`。
+>
+> 教训：**用隐式的文件存在性做构建行为开关是脆弱的**。同一份代码在
+> 开发者机器上通过、在 CI 上失败，而失败原因与业务代码无关。
+> 现已彻底移除，回归 Enforcer 的显式校验。
+
+若你将来确实需要**不同项目用不同 JDK**，那是个人环境偏好，
+可在自己的 `~/.m2/toolchains.xml` + 项目本地配置中处理，
+不应写进本项目的构建定义。Scoop 的 `scoop reset <jdk包>` 只能做全局切换。
 
 ---
 
