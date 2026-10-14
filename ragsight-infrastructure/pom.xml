@@ -25,6 +25,16 @@
       <artifactId>ragsight-domain</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!--
+      依赖 application 的原因：infrastructure 需要实现 application 定义的
+      RetrieverFactory 端口（驱动适配器）。依赖方向仍是
+      infrastructure -> application -> domain，未违反铁律 R2。
+    -->
+    <dependency>
+      <groupId>cn.qiyec.ragsight</groupId>
+      <artifactId>ragsight-application</artifactId>
+      <version>${project.version}</version>
+    </dependency>
 
     <dependency>
       <groupId>org.slf4j</groupId>
