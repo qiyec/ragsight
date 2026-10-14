@@ -6,7 +6,7 @@
 - **最后更新**：2026-10-14
 - **当前阶段**：P3 CLI 与诊断报告（**已跑出第一份真实诊断报告**）
 - **远程仓库**：https://github.com/qiyec/ragsight （public，CI 全绿）
-- **规模**：141 个测试 / 36 个 Java 文件
+- **规模**：143 个测试
 
 ---
 
@@ -94,19 +94,17 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose
 
 ## ⏭️ 下一步（精确到文件）
 
-1. **把 `archunit.properties` 的 `failOnEmptyShould` 改回 `true`**
-   —— `application` 已有真实类，此技术债可以偿还
-2. **补 application 层测试**（`DiagnosisEngineTest`）：
+1. **补 application 层测试**（`DiagnosisEngineTest`）：
    - 结论规则的正确性（构造已知缺陷语料，断言结论命中）
    - **这是元评测的雏形**：用"已知答案的语料"证明诊断工具本身是对的
-3. **接入外部语料**：`rag diagnose --corpus <path>`，支持 Markdown / 纯文本
+2. **接入外部语料**：`rag diagnose --corpus <path>`，支持 Markdown / 纯文本
    —— 目前只能用内置演示语料
-4. **`DiagnosisEngine` 支持切分策略作为实验变量**
+3. **`DiagnosisEngine` 支持切分策略作为实验变量**
    —— 现在语料是切分后的结果传入，尚未支持"对比不同切分策略"
-5. **`Reranker` 实现 + `LexicalOverlapReranker`**
+4. **`Reranker` 实现 + `LexicalOverlapReranker`**
    —— 接口已有，无实现；报告结论目前无法给出"该不该加重排"的建议
-6. **HTML 报告**（Markdown 已够用，优先级低于上面几项）
-7. **`docs/learn/` 学习文档**：每个知识点配可运行验证
+5. **HTML 报告**（Markdown 已够用，优先级低于上面几项）
+6. **`docs/learn/` 学习文档**：每个知识点配可运行验证
 
 ---
 
@@ -131,7 +129,7 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose
 
 | # | 问题 | 影响 | 计划 |
 |---|---|---|---|
-| 1 | `archunit.properties` 仍为 `failOnEmptyShould=false` | 架构规则若被写空不再报警 | 下一步改回 `true` |
+| 1 | ~~`archunit.properties` 的 `failOnEmptyShould`~~ | ~~架构规则若被写空不再报警~~ | ✅ 已改回 `true`，并加 `ArchGateSelfCheckTest` 验证门禁真的会拦人 |
 | 2 | **无 application 层测试** | 诊断结论规则未被验证 | 下一步（元评测雏形） |
 | 3 | 只能用内置演示语料 | 无法诊断真实知识库 | 接入 `--corpus <path>` |
 | 4 | 切分策略尚不能作为实验变量 | 报告无法回答"该不该改切分" | 需要重构请求模型 |
