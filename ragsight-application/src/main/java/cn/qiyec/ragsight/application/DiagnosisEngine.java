@@ -193,14 +193,15 @@ public final class DiagnosisEngine {
         if (bestRecallConfigId != null && bestRecallDelta >= NOTABLE_DELTA) {
             ExperimentResult best = results.get(bestRecallConfigId);
             findings.add(String.format(
-                    "✅ 换成「%s」可把 %s 提升 %.3f（%.3f → %.3f）。这是本次诊断中收益最大的单项改动。",
-                    best.config().displayName(), recallName, bestRecallDelta,
-                    baselineRecall, best.score(recallName)));
+                    "✅ 换成「%s」可把 %s 从 %.3f 提到 %.3f（+%.3f）。"
+                            + "这是本次诊断里收益最大的一处改动。",
+                    best.config().displayName(), recallName,
+                    baselineRecall, best.score(recallName), bestRecallDelta));
         } else if (bestRecallConfigId != null) {
             ExperimentResult best = results.get(bestRecallConfigId);
             findings.add(String.format(
-                    "「%s」相对基准的 %s 仅提升 %.3f，未达到显著阈值（%.2f）——"
-                            + "不值得为此增加系统复杂度。",
+                    "「%s」的 %s 只提升了 %.3f，没到 %.2f 这个显著阈值，"
+                            + "不值得为它增加系统复杂度。",
                     best.config().displayName(), recallName, bestRecallDelta, NOTABLE_DELTA));
         }
 
@@ -216,7 +217,10 @@ public final class DiagnosisEngine {
             }
         }
         if (!notWorth.isEmpty()) {
-            findings.add("以下配置相对基准无可观测收益，建议不要采用：" + String.join("、", notWorth));
+            findings.add(String.format(
+                    "以下配置相对基准没有可观测收益（变化都小于 %.2f），"
+                            + "不值得为此增加复杂度，建议不要采用：%s",
+                    NOTABLE_DELTA, String.join("、", notWorth)));
         }
 
         return List.copyOf(findings);
