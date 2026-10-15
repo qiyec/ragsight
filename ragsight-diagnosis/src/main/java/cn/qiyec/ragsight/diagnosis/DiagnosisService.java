@@ -1,4 +1,4 @@
-package cn.qiyec.ragsight.web.service;
+package cn.qiyec.ragsight.diagnosis;
 
 import cn.qiyec.ragsight.application.DiagnosisEngine;
 import cn.qiyec.ragsight.application.DiagnosisReport;
@@ -13,10 +13,10 @@ import cn.qiyec.ragsight.infra.index.InMemoryVectorIndex;
 import cn.qiyec.ragsight.infra.reader.CorpusPreparation;
 import cn.qiyec.ragsight.infra.retriever.CompositeRetrieverFactory;
 import cn.qiyec.ragsight.infra.tokenizer.SimpleTokenizer;
-import cn.qiyec.ragsight.web.api.ApiDtos;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
+
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,7 +32,6 @@ import java.util.List;
  * 命令行和网页可能给出不同的结论。诊断工具最不能出的问题
  * 就是"两个入口说法不一致"。
  */
-@Service
 public class DiagnosisService {
 
     private static final Logger log = LoggerFactory.getLogger(DiagnosisService.class);
@@ -212,27 +211,112 @@ public class DiagnosisService {
         return List.copyOf(plans);
     }
 
+    /**
+     * 造一个切分方案。
+     *
+     * <p>公开出来是给诊断 Agent 用的：它要能指定"递归切分 120 字 + 重排"
+     * 这种具体组合，而不是只知道页面上的那几套惯例方案。
+     *
+     * @param strategy 切分策略，见 {@link #STRATEGY_RECURSIVE} 等常量
+     */
+    public static ExperimentPlan plan(String strategy, int chunkSize, int chunkOverlap,
+                                      int topK, boolean rerank) {
+        if (chunkSize <= 0) {
+            throw new IllegalArgumentException("切分窗口必须为正数，实际为 " + chunkSize);
+        }
+        if (chunkOverlap < 0 || chunkOverlap >= chunkSize) {
+            throw new IllegalArgumentException(String.format(
+                    "重叠字符数必须在 0 到 %d 之间，实际为 %d", chunkSize - 1, chunkOverlap));
+        }
+
+        String strategyLabel = switch (strategy) {
+            case STRATEGY_RECURSIVE -> "递归切分";
+            case STRATEGY_FIXED -> "固定窗口";
+            default -> throw new IllegalArgumentException(
+                    "不认识的切分策略：" + strategy + "。可用的是 "
+                            + STRATEGY_RECURSIVE + " 和 " + STRATEGY_FIXED);
+        };
+
+        var chunking = STRATEGY_FIXED.equals(strategy)
+                ? new FixedWindowChunkingStrategy(chunkSize, chunkOverlap)
+                : new RecursiveCharacterChunkingStrategy(chunkSize, chunkOverlap);
+
+        String id = strategy + "-" + chunkSize + (rerank ? "-rerank" : "");
+        String label = strategyLabel + " " + chunkSize + " 字" + (rerank ? " + 重排" : "");
+        return new ExperimentPlan(id, label, chunking, topK, rerank);
+    }
+
+    /** 切分策略：递归字符。 */
+    public static final String STRATEGY_RECURSIVE = "recursive";
+    /** 切分策略：固定窗口。 */
+    public static final String STRATEGY_FIXED = "fixed";
+
     /** 切分窗口的可选值，供页面画下拉框。 */
     public List<Integer> chunkSizeChoices() {
         return CHUNK_SIZE_CHOICES;
     }
 
-    /**
-     * 召回方式的可选值。
-     *
-     * <p>当前页面上这三种是固定全跑的（诊断的价值来自对比，
-     * 只跑一种的话绝对分数回答不了"该不该改"）。列出来是为了
-     * 页面上能说明"这次对比了哪几种"。
-     */
-    public List<ApiDtos.Choice> retrieverChoices() {
-        return RetrieverConfig.standardBaselines().stream()
-                .map(c -> new ApiDtos.Choice(c.id(), c.displayName()))
-                .toList();
-    }
 
     /** 召回条数的可选值。 */
     public List<Integer> topKChoices() {
         return TOP_K_CHOICES;
+    }
+
+    /**
+     * 跑一批由调用方指定的切分方案。
+     *
+     * <p>和 {@link #diagnose} 的区别：{@code diagnose} 是"给我一组参数，
+     * 我按惯例铺开几组方案"（网页用的）；这个是"我已经想好要对比哪几组，
+     * 你照着跑"（诊断 Agent 用的）。
+     *
+     * <p>单独开这个入口，是为了让"读语料 + 造引擎 + 跑实验"这段只写一遍。
+     * Agent 那边只负责决定"要对比什么"。
+     *
+     * @param embeddingSource 只是用来取向量模型配置，其余字段不读
+     */
+    public RunOutcome diagnosePlans(String corpusId,
+                                    List<ExperimentPlan> plans,
+                                    List<RetrieverConfig> retrievers,
+                                    ApiRequest embeddingSource) {
+        if (plans.isEmpty()) {
+            throw new IllegalArgumentException("至少要有一个切分方案");
+        }
+        if (retrievers.isEmpty()) {
+            throw new IllegalArgumentException("至少要有一个召回方式");
+        }
+
+        CorpusCatalog.CorpusEntry entry = catalog.byId(corpusId);
+        if (entry == null) {
+            throw new IllegalArgumentException("没有这个语料：" + corpusId
+                    + "。可用的有：" + catalog.all().stream()
+                    .map(CorpusCatalog.CorpusEntry::id).toList());
+        }
+
+        CorpusPreparation preparation = entry.load();
+        DiagnosisRequest request = new DiagnosisRequest(
+                preparation.sourceDescription(),
+                preparation.documents(),
+                preparation.caseSpec(),
+                List.copyOf(plans),
+                List.copyOf(retrievers));
+
+        DiagnosisEngine engine = buildEngine(embeddingSource);
+
+        log.info("按指定方案诊断：语料={}，{} 种切分 × {} 种召回 = {} 次实验",
+                entry.displayName(), plans.size(), retrievers.size(),
+                plans.size() * retrievers.size());
+
+        long startedAt = System.currentTimeMillis();
+        DiagnosisReport report = engine.diagnose(request);
+        long elapsed = System.currentTimeMillis() - startedAt;
+
+        log.info("诊断完成，用时 {} ms", elapsed);
+        return new RunOutcome(report, plans.get(0).topK(), elapsed);
+    }
+
+    /** 切分窗口的可选值，供 Agent 侧列候选。 */
+    public static List<Integer> chunkSizeOptions() {
+        return CHUNK_SIZE_CHOICES;
     }
 
     /** 环境里有没有配 Key，用来决定页面上那个开关默认可不可用。 */

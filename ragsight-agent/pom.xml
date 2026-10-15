@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>cn.qiyec.ragsight</groupId>
+    <artifactId>ragsight-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>ragsight-agent</artifactId>
+  <name>ragsight :: agent</name>
+  <description>
+    第二层：一个会自己决定下一步试什么的诊断 Agent（基于 AgentScope）。
+
+    和第一层的分工：
+      第一层  DiagnosisEngine   算指标、跑对比 —— 纯计算，结果可复现
+      第二层  本模块            看着中间结果决定下一步试什么 —— 会调大模型
+
+    这一层只是"决定试什么"，不下结论。结论仍然由第一层的固定规则推导，
+    所以同一份数据不会因为大模型这次心情不同而给出两种说法。
+  </description>
+
+  <dependencies>
+    <!--
+      依赖 diagnosis 而不是 web：诊编排那段（读语料、造引擎、跑方案）
+      是网页和 Agent 共用的，已经抽成了独立模块。
+      绝不能依赖 web——Spring Boot 打出来的是可执行胖包，
+      那种包没法当依赖用；而且 agent 依赖 web 在架构上就是错的。
+    -->
+    <dependency>
+      <groupId>cn.qiyec.ragsight</groupId>
+      <artifactId>ragsight-diagnosis</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <!-- AgentScope 核心：ReActAgent、Toolkit、@Tool -->
+    <dependency>
+      <groupId>io.agentscope</groupId>
+      <artifactId>agentscope-core</artifactId>
+    </dependency>
+    <!-- 模型提供商是独立的扩展模块。先用 DashScope -->
+    <dependency>
+      <groupId>io.agentscope</groupId>
+      <artifactId>agentscope-extensions-model-dashscope</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

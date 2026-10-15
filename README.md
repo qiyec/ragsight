@@ -125,7 +125,7 @@ mvnw.cmd verify
 mvnw.cmd clean package -DskipTests
 
 # 启动服务
-java -jar ragsight-web/target/ragsight-web.jar
+java -jar ragsight-web/target/ragsight-web-exec.jar
 ```
 
 等它打印出 `Started RagsightWebApplication` 之后，**在浏览器地址栏输入**：

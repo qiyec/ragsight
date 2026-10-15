@@ -144,4 +144,81 @@ class ArchitectureRulesTest {
             noClasses().that().resideInAnyPackage(DOMAIN, APPLICATION)
                     .should().dependOnClassesThat()
                     .resideInAnyPackage("org.springframework..");
+
+    // ---------------------------------------------------------------
+    // Agent 层的边界（第二层，会调大模型）
+    // ---------------------------------------------------------------
+
+    /**
+     * 核心三层都不许依赖 Agent 层。
+     *
+     * <p>Agent 层是第二层，它是"会调大模型的那一层"。
+     * 如果 domain 或 application 依赖了它，就等于诊断逻辑沾上了大模型——
+     * 那"结论可复现"这个立身之本就没了。
+     *
+     * <p>方向必须是单向的：agent → web → infrastructure → application → domain。
+     */
+    @ArchTest
+    static final ArchRule 核心层不应依赖_agent_层 =
+            noClasses().that().resideInAnyPackage(
+                            DOMAIN, APPLICATION, "cn.qiyec.ragsight.infra..",
+                            "cn.qiyec.ragsight.cli..")
+                    .should().dependOnClassesThat()
+                    .resideInAnyPackage("cn.qiyec.ragsight.agent..");
+
+    /**
+     * 核心三层不许依赖 AgentScope。
+     *
+     * <p>AgentScope 是第二层的实现手段。它不该渗进第一层——
+     * 一旦渗进去，整个项目就变成"必须先配好大模型才能跑"，
+     * 违反"默认流程零配置可用"这条规矩。
+     */
+    @ArchTest
+    static final ArchRule 核心层不应依赖_agentscope =
+            noClasses().that().resideInAnyPackage(DOMAIN, APPLICATION)
+                    .should().dependOnClassesThat()
+                    .resideInAnyPackage("io.agentscope..");
+
+    /**
+     * Agent 层不许依赖命令行入口。
+     *
+     * <p>cli 和 agent 是两个平级的入口，谁都不该依赖谁。
+     * Agent 层要用的是 diagnosis 那边的编排能力，不是命令行的参数解析。
+     */
+    @ArchTest
+    static final ArchRule agent_层不应依赖_cli =
+            noClasses().that().resideInAnyPackage("cn.qiyec.ragsight.agent..")
+                    .should().dependOnClassesThat()
+                    .resideInAnyPackage("cn.qiyec.ragsight.cli..");
+
+    /**
+     * Web 层不许依赖 Agent 层。
+     *
+     * <p>网页基本不用大模型（只有诊断 Agent 用），而 Agent 是第二层。
+     * 反过来还更严重：如果 web 依赖 agent，而 agent 又通过 diagnosis
+     * 回到 web，就绕出一个环。入口之间必须互相独立，
+     * 共用的东西放 diagnosis。
+     */
+    @ArchTest
+    static final ArchRule web_层不应依赖_agent_层 =
+            noClasses().that().resideInAnyPackage("cn.qiyec.ragsight.web..")
+                    .should().dependOnClassesThat()
+                    .resideInAnyPackage("cn.qiyec.ragsight.agent..");
+
+    /**
+     * 共用编排层不许依赖 Agent 层，也不许认识 Spring。
+     *
+     * <p>diagnosis 是网页和 Agent 都要用的那段编排。它必须保持"纯 Java"：
+     * 一旦它依赖了 Agent，网页就会间接依赖大模型；
+     * 一旦它依赖了 Spring，Agent 那边不用 Spring 就直接构建不了。
+     */
+    @ArchTest
+    static final ArchRule diagnosis_层应保持中立 =
+            noClasses().that().resideInAnyPackage("cn.qiyec.ragsight.diagnosis..")
+                    .should().dependOnClassesThat()
+                    .resideInAnyPackage(
+                            "cn.qiyec.ragsight.agent..",
+                            "cn.qiyec.ragsight.web..",
+                            "cn.qiyec.ragsight.cli..",
+                            "org.springframework..");
 }

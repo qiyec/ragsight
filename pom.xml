@@ -18,6 +18,8 @@
     <module>ragsight-infrastructure</module>
     <module>ragsight-cli</module>
     <module>ragsight-web</module>
+    <module>ragsight-diagnosis</module>
+    <module>ragsight-agent</module>
     <module>ragsight-architecture-tests</module>
   </modules>
 
@@ -42,6 +44,11 @@
     -->
     <logback.version>1.5.22</logback.version>
     <!--
+      AgentScope 用 2.0.4 而不是最新的 2.1.0-BETA1：这是要给别人用的项目，
+      不适合押在 BETA 上。升级只需改这一行。
+    -->
+    <agentscope.version>2.0.4</agentscope.version>
+    <!--
       Spring Boot 只用在 ragsight-web 和将来的 Agent 层。
       选 3.5.9 而不是最新的 3.5.16，是因为本地 Maven 仓库已有缓存，
       首次构建不用等下载。升级只需改这一行。
@@ -58,6 +65,50 @@
   <dependencyManagement>
     <dependencies>
       <!--
+        本项目自己的模块也在这里声明一遍。
+
+        不只是为了省掉各模块 pom 里的 version，更重要的是让 Maven
+        能算对构建顺序：模块之间的依赖如果只在子 pom 里写，
+        跨模块时反应堆顺序会排错（出现过 agent 排在它依赖的 web 前面，
+        直接编译失败）。在这里声明之后 Maven 一眼就能看出谁依赖谁。
+      -->
+      <dependency>
+        <groupId>cn.qiyec.ragsight</groupId>
+        <artifactId>ragsight-domain</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>cn.qiyec.ragsight</groupId>
+        <artifactId>ragsight-application</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>cn.qiyec.ragsight</groupId>
+        <artifactId>ragsight-infrastructure</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>cn.qiyec.ragsight</groupId>
+        <artifactId>ragsight-cli</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>cn.qiyec.ragsight</groupId>
+        <artifactId>ragsight-web</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>cn.qiyec.ragsight</groupId>
+        <artifactId>ragsight-diagnosis</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>cn.qiyec.ragsight</groupId>
+        <artifactId>ragsight-agent</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+
+      <!--
         Spring Boot 的依赖管理。用 import 而不是把 spring-boot-starter-parent
         当父 POM，是因为本项目自己的父 POM 已经管了很多东西
         （编译参数、Enforcer、插件版本），换父 POM 会把它们全顶掉。
@@ -66,6 +117,19 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-dependencies</artifactId>
         <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <!--
+        AgentScope 的版本管理。同样是 import 方式，不换父 POM。
+        它必须排在 Spring Boot 之后：AgentScope 自己也依赖 Spring，
+        让 Spring Boot 的版本先定下来，再由 AgentScope 补充它独有的那些，
+        两边的版本才不会被顶掉。
+      -->
+      <dependency>
+        <groupId>io.agentscope</groupId>
+        <artifactId>agentscope-bom</artifactId>
+        <version>${agentscope.version}</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>

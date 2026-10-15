@@ -1,12 +1,10 @@
-package cn.qiyec.ragsight.web.service;
+package cn.qiyec.ragsight.diagnosis;
 
 import cn.qiyec.ragsight.infra.demo.DemoCorpus;
 import cn.qiyec.ragsight.infra.demo.DemoEvaluationSet;
 import cn.qiyec.ragsight.infra.reader.CorpusPreparation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -35,7 +33,6 @@ import java.util.stream.Stream;
  * <p>两种来源最终都走 {@link CorpusPreparation}，所以演示路径和真实路径
  * 是同一套流程——演示能跑通就说明真实路径也能跑通。
  */
-@Service
 public class CorpusCatalog {
 
     private static final Logger log = LoggerFactory.getLogger(CorpusCatalog.class);
@@ -48,7 +45,7 @@ public class CorpusCatalog {
 
     private final Map<String, CorpusEntry> entries = new LinkedHashMap<>();
 
-    public CorpusCatalog(@Value("${ragsight.examples-dir:examples}") String examplesDir) {
+    public CorpusCatalog(String examplesDir) {
         Path examplesRoot = Path.of(examplesDir).toAbsolutePath().normalize();
 
         // 内置演示语料总是有

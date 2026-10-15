@@ -1,7 +1,8 @@
 package cn.qiyec.ragsight.web.api;
 
-import cn.qiyec.ragsight.web.service.CorpusCatalog;
-import cn.qiyec.ragsight.web.service.DiagnosisService;
+import cn.qiyec.ragsight.application.RetrieverConfig;
+import cn.qiyec.ragsight.diagnosis.DiagnosisService;
+import cn.qiyec.ragsight.diagnosis.CorpusCatalog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -42,6 +43,19 @@ public class DiagnoseController {
      *
      * <p>页面打开时先调这个，把所有下拉框填好。
      */
+    /**
+     * 召回方式的可选值。
+     *
+     * <p>列出来是为了页面上能说明"这次对比了哪几种"。
+     * 放在这里而不是服务里，因为它返回的是网页用的结构，
+     * 服务层不该认识网页的数据结构。
+     */
+    private List<ApiDtos.Choice> retrieverChoices() {
+        return RetrieverConfig.standardBaselines().stream()
+                .map(c -> new ApiDtos.Choice(c.id(), c.displayName()))
+                .toList();
+    }
+
     @GetMapping("/options")
     public ApiDtos.Options options() {
         List<ApiDtos.CorpusInfo> corpora = catalog.all().stream()
@@ -59,7 +73,7 @@ public class DiagnoseController {
         return new ApiDtos.Options(
                 corpora,
                 catalog.defaultId(),
-                service.retrieverChoices(),
+                retrieverChoices(),
                 service.chunkSizeChoices(),
                 service.topKChoices(),
                 realEmbedding,

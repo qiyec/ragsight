@@ -32,6 +32,11 @@
       <artifactId>ragsight-infrastructure</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <dependency>
+      <groupId>cn.qiyec.ragsight</groupId>
+      <artifactId>ragsight-diagnosis</artifactId>
+      <version>${project.version}</version>
+    </dependency>
 
     <!-- Web 服务。静态资源托管、JSON 编解码、依赖注入都由它提供 -->
     <dependency>
@@ -49,11 +54,29 @@
   <build>
     <finalName>ragsight-web</finalName>
     <plugins>
-      <!-- 打成可以直接 java -jar 启动的可执行 jar -->
+      <!--
+        打成可以直接 java -jar 启动的可执行 jar。
+
+        关键在 classifier="exec"：默认行为是把可执行胖包**替换**成主产物，
+        那样会出两个问题：
+
+        1. 架构测试的 ArchUnit 读不了胖包——类被挪到了 BOOT-INF/classes 下，
+           规则会报 "failed to check any classes"（这个坑真实踩到过）。
+        2. 别的模块把它当依赖时同样读不到里面的类。
+
+        加上 classifier 之后，主产物仍是普通薄 jar（ArchUnit 和依赖方都能读），
+        可执行胖包另存为 ragsight-web-exec.jar。
+
+        运行命令因此是：
+          java -jar ragsight-web/target/ragsight-web-exec.jar
+      -->
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
         <version>${spring-boot.version}</version>
+        <configuration>
+          <classifier>exec</classifier>
+        </configuration>
         <executions>
           <execution>
             <goals>
@@ -70,8 +93,6 @@
         服务运行时 jar 被占用，复制过去的那个文件删不掉，
         于是 **mvnw clean verify 会直接失败**（clean 插件删不掉文件）。
         为了少写几行路径而让构建失败，不值得。
-
-        可执行 jar 就留在各自模块的 target 下，README 里分别写清楚。
       -->
     </plugins>
   </build>

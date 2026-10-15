@@ -34,6 +34,65 @@
       <scope>test</scope>
     </dependency>
 
+    <!--
+      下面三个也要在测试 classpath 上，否则 ArchUnit 扫不到那些包，
+      规则会静默失效——构建照样通过，但实际什么都没检查。
+      这种"以为有门禁、其实没有"的状态比没有门禁更危险。
+      架构测试模块自己的 ArchGateSelfCheckTest 就在防这类问题。
+
+      注：这些依赖只是为了让 ArchUnit **看得到**那些模块的类，
+      不需要把它们的功能跑起来，所以都带 test scope。
+    -->
+    <dependency>
+      <groupId>cn.qiyec.ragsight</groupId>
+      <artifactId>ragsight-diagnosis</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>cn.qiyec.ragsight</groupId>
+      <artifactId>ragsight-infrastructure</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>cn.qiyec.ragsight</groupId>
+      <artifactId>ragsight-web</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>cn.qiyec.ragsight</groupId>
+      <artifactId>ragsight-agent</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+      <!--
+        把 AgentScope 的传递依赖挡在外面。
+        一是没必要（规则只看包名，不跑功能），
+        二是这里有个真实冲突：项目固定了 logback 1.5.22，
+        而 AgentScope 的依赖树会带进它自己的版本，两个版本在
+        classpath 上打架会让架构测试模块的日志初始化出错。
+      -->
+      <exclusions>
+        <exclusion>
+          <groupId>io.agentscope</groupId>
+          <artifactId>agentscope-core</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>io.agentscope</groupId>
+          <artifactId>agentscope-extensions-model-dashscope</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>ch.qos.logback</groupId>
+          <artifactId>logback-classic</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.slf4j</groupId>
+          <artifactId>slf4j-api</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
     <dependency>
       <groupId>com.tngtech.archunit</groupId>
       <artifactId>archunit-junit5</artifactId>

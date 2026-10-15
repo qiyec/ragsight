@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>cn.qiyec.ragsight</groupId>
+    <artifactId>ragsight-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>ragsight-diagnosis</artifactId>
+  <name>ragsight :: diagnosis</name>
+  <description>
+    跑的这一步：把"要对比哪几组"翻译成实验方案、读语料、跑出报告。
+
+    为什么单独一个模块，而不是放在 web 里：
+    有两个入口都要用它——网页（ragsight-web）和诊断 Agent（ragsight-agent）。
+    如果放在 web 里，agent 就得依赖 web，等于把"网页"当库用。
+    那还带来一个很实际的麻烦：Spring Boot 打出来的是可执行胖包，
+    这种包不能当作依赖使用。
+
+    所以把共用的这段抽出来，谁都不依赖谁。
+    这个模块不认识 Spring，也不认识网页的数据结构。
+  </description>
+
+  <dependencies>
+    <dependency>
+      <groupId>cn.qiyec.ragsight</groupId>
+      <artifactId>ragsight-application</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>cn.qiyec.ragsight</groupId>
+      <artifactId>ragsight-infrastructure</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
