@@ -24,21 +24,26 @@ ragsight 把检索拆成能单独测量的几步，分别给指标，直接指�
 
 ```
 ┌───────────────────────────────────────────────────────┐
-│ 第二层：让大模型自己决定试什么            [还没开始]    │
+│ 第二层：让大模型自己决定试什么                [已完成]  │
+│  ragsight-agent                                        │
 │                                                        │
 │ 为什么需要：把所有组合跑一遍是跑不完的                  │
-│ （6种切分 × 3种召回 × 2种重排 = 36 组），              │
-│ 得有个东西看着中间结果决定下一步试什么                  │
+│ （3种切分 × 3种召回 × 2种重排 = 18 组，还得跑测试集）   │
+│ 它一次只改一个东西、看结果、再决定下一个改什么          │
 └──────────────────────┬────────────────────────────────┘
                        │ 作为一个工具被调用
 ┌──────────────────────▼────────────────────────────────┐
-│ 第一层：算指标、跑对比                     [正在做]     │
+│ 第一层：算指标、跑对比                        [已完成]   │
+│  ragsight-domain / application / diagnosis             │
 │ 「尺子」——每个实验都是纯计算，结果必须可复现            │
 └───────────────────────────────────────────────────────┘
 ```
 
 **第一层绝对不能出现大模型调用。** 同一份文档、同一套测试集，跑两次必须
 得到一模一样的数字。如果指标是靠模型算的，那这个工具给的结论就没人敢用。
+
+第二层只用大模型决定"试什么"，**不下结论**——结论仍由第一层的固定规则推导。
+所以同一份数据不会因为模型这次发挥不同而给出两种说法。
 
 ---
 
@@ -49,9 +54,26 @@ ragsight-parent
 ├── ragsight-domain              核心逻辑，只依赖 JDK
 ├── ragsight-application         把几步串成一个完整用例
 ├── ragsight-infrastructure      接口的具体实现
+├── ragsight-diagnosis           网页和 Agent 共用的那段编排（读语料、跑方案）
 ├── ragsight-cli                 命令行入口
+├── ragsight-web                 Web 界面（Spring Boot）+ SSE 推 Agent 过程
+├── ragsight-agent               第二层：会自己决定试什么的诊断 Agent
 └── ragsight-architecture-tests  用测试守住下面的规矩
 ```
+
+依赖方向（箭头单向，有架构测试守着）：
+
+```
+cli ─┐
+     ├─▶ infrastructure ─┐
+web ─┤                    ├─▶ application ─▶ domain
+     └─▶ agent ──▶ diagnosis ─┘
+```
+
+- `diagnosis` 是**中立**的：不认识 Spring、不认识网页、不认识 Agent
+- `web` 依赖 `agent`（网页上有 Agent 入口），但反过来不行
+- `cli` 和 `agent` 是平级入口，互不依赖
+
 
 ### 必须守住的规矩
 
@@ -108,10 +130,15 @@ cn.qiyec.ragsight.domain
 | 离线向量化 | `DeterministicHashEmbedding` | 让测试和 CI 不需要 API Key，指标可复现 |
 | 真实向量化 | 一个通用的 OpenAI 兼容适配器（可配 `baseUrl`） | 一个实现能对接 DashScope / DeepSeek / Ollama / vLLM，不用写一堆 |
 | 向量存储 | 内存暴力算（先这样），后期考虑 pgvector | 几万个片段暴力算也就毫秒级；而且不用起 Docker 就能跑 |
-| Agent 层 | `io.agentscope:agentscope-bom`（2.0.4） | 已确认 Maven Central 上有 |
+| Web 层 | Spring Boot 3.5.9（只加在 `ragsight-web`） | 理由和被否掉的方案见 `docs/adr/005-web-layer-and-spring-boot.md` |
+| Agent 层 | AgentScope 2.0.4（`agentscope-core` + 模型扩展） | 用 2.0.4 不用 2.1.0-BETA1——这是给别人用的项目，不押 BETA |
 
-**还没引入**：Spring Boot、任何向量数据库 SDK、PDFBox 之外的文件解析库。
+**还没引入**：任何向量数据库 SDK、PDFBox 之外的文件解析库。
 引入任何一个都要先写 ADR 说明为什么。
+
+注意 Spring Boot 和 AgentScope 都是**边缘依赖**：只在 `ragsight-web`
+和 `ragsight-agent` 里。domain 和 application 依然零第三方依赖，
+有架构测试盯着（12 条规则）。
 
 ---
 
