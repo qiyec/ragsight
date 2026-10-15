@@ -28,6 +28,19 @@ import java.util.List;
 public record ExperimentPlan(String id, String displayName, ChunkingStrategy strategy,
                              int topK, boolean rerank) {
 
+    /**
+     * 加重排时，召回阶段会多要几倍候选。
+     *
+     * <p>为什么要多要：重排只能在"已经召回的候选里"重排，救不回没召到的东西。
+     * 如果召回时就只要 topK 条，重排最多在这几条里挪位置，几乎看不出区别，
+     * 还会让人误以为"重排没用"。
+     *
+     * <p><b>这个常量放在这里而不是实现里</b>，因为诊断流程要用它判断
+     * "候选池是不是已经被拉到等于整个语料"——那是实验设置的问题，
+     * 得在结论里提醒用户。实现和判断必须用同一个数字，否则提醒会说错。
+     */
+    public static final int RERANK_CANDIDATE_MULTIPLIER = 4;
+
     public ExperimentPlan {
         if (id == null || id.isBlank()) {
             throw new IllegalArgumentException("实验条件的 id 不能为空");

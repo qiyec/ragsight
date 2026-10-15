@@ -1,0 +1,13 @@
+server:
+  port: 8080
+
+ragsight:
+  # 示例语料目录。相对于启动时的工作目录。
+  # 从仓库根目录启动（mvnw -pl ragsight-web spring-boot:run）就是 examples。
+  examples-dir: examples
+
+logging:
+  level:
+    cn.qiyec.ragsight: INFO
+  pattern:
+    console: "%d{HH:mm:ss} %-5level %logger{20} - %msg%n"

@@ -239,6 +239,9 @@ public final class DiagnosisEngine {
         // 规则四：换召回方式有没有收益
         deriveRetrieverFindings(results, baseline, recallName, mrrName, findings);
 
+        // 最后检查一遍：这批数据能不能支撑上面的结论
+        checkDataSanity(request, results, corpusSizes, topK, findings);
+
         return List.copyOf(findings);
     }
 
@@ -331,15 +334,102 @@ public final class DiagnosisEngine {
                             mrrName, -mrrGain));
                 }
 
-                // 重排理论上不该改变召回率，变了说明有问题
+                // 召回率变了：可能是"异常"，也可能只是候选池变大了
+                //
+                // 重排本身只重排候选，不改变召回。但它前面会多要几倍候选，
+                // 于是候选池变大，"正确答案进入候选"的机会也就变大。
+                // 这一点必须说清，否则用户会以为工具算错了。
                 if (Math.abs(recallGain) >= NOTABLE_DELTA) {
-                    findings.add(String.format(
-                            "⚠ 异常：加重排后召回率也变了 %+.3f。"
-                                    + "重排只在已有候选里重排，理论上不该改变召回率，"
-                                    + "这个现象值得查一下。",
-                            recallGain));
+                    int pool = ExperimentPlan.RERANK_CANDIDATE_MULTIPLIER;
+                    if (pool > 1) {
+                        findings.add(String.format(
+                                "注意：加重排后召回率也变了 %+.3f。"
+                                        + "这不是异常——重排前会多要 %d 倍候选，"
+                                        + "候选池变大，正确答案进入候选的机会本来就会增加。"
+                                        + "所以这里比出来的差异，"
+                                        + "一部分来自「候选更多」而不是「排序更好」。"
+                                        + "想干净地单独看重排的效果，"
+                                        + "要让两种方案的候选池一样大。",
+                                recallGain, pool));
+                    } else {
+                        findings.add(String.format(
+                                "⚠ 异常：加重排后召回率也变了 %+.3f。"
+                                        + "两边候选池一样大时，重排理论上不该改变召回率，"
+                                        + "这个现象值得查一下。",
+                                recallGain));
+                    }
                 }
                 return; // 只报第一组对照，免得结论堆砌
+            }
+        }
+    }
+
+    /**
+     * 检查这批实验的结论有没有站得住脚的前提。
+     *
+     * <p>有些数据看起来是"发现了问题"，其实是实验设置有问题。
+     * 这类情况必须主动指出来，否则用户会照着错误的结论去改配置。
+     */
+    private void checkDataSanity(DiagnosisRequest request,
+                                 Map<ExperimentId, ExperimentResult> results,
+                                 Map<String, Integer> corpusSizes,
+                                 int topK,
+                                 List<String> findings) {
+        // 语料本身比 topK 还少：这时"召回前 K 条"等于"返回全部"，
+        // 召回率恒为 1，看不出任何召回环节的差异
+        int minCorpusSize = corpusSizes.values().stream()
+                .mapToInt(Integer::intValue).min().orElse(0);
+        if (minCorpusSize > 0 && minCorpusSize <= topK) {
+            findings.add(String.format(
+                    "⚠ 语料只有 %d 个片段，而召回条数就是 %d —— "
+                            + "「取前 %d 条」等于「返回全部」，召回率必然满分，"
+                            + "这时候看不出任何召回环节的差异。"
+                            + "想看出区别，请加大语料，或者把召回条数调小。",
+                    minCorpusSize, topK, topK));
+        }
+
+        // 有重排方案时，检查"给重排的候选池"是不是已经等于整个语料 ——
+        // 那样的话所有召回方式给出的候选集完全一样，重排后结果也必然一样，
+        // "不同召回方式"这个对比就失效了
+        boolean hasRerank = request.chunkings().stream().anyMatch(ExperimentPlan::rerank);
+        if (hasRerank && minCorpusSize > 0) {
+            int candidatePool = ExperimentPlan.RERANK_CANDIDATE_MULTIPLIER * topK;
+            if (candidatePool >= minCorpusSize) {
+                findings.add(String.format(
+                        "⚠ 重排前会多要 %d 倍候选（%d 条），而语料只有 %d 个片段——"
+                                + "等于把所有片段都交给重排，于是不同召回方式给出的候选集"
+                                + "完全一样，重排后结果也一样，"
+                                + "「重排 vs 不同召回方式」这组对比就失去意义了。"
+                                + "想看清楚，请加大语料，或者把召回条数调小。",
+                        ExperimentPlan.RERANK_CANDIDATE_MULTIPLIER, candidatePool, minCorpusSize));
+            }
+        }
+
+        // 所有重排行给出完全相同的指标，基本可以断定候选集被拉满到了全语料
+        Map<String, Map<String, Double>> sameChunkingRerank = new LinkedHashMap<>();
+        for (ExperimentResult result : results.values()) {
+            if (!result.plan().rerank()) {
+                continue;
+            }
+            sameChunkingRerank.computeIfAbsent(result.plan().id(),
+                    k -> new LinkedHashMap<>()).put(result.retriever().id(),
+                    result.score("MRR@" + topK));
+        }
+        for (Map.Entry<String, Map<String, Double>> group : sameChunkingRerank.entrySet()) {
+            if (group.getValue().size() < 2) {
+                continue;
+            }
+            double min = group.getValue().values().stream()
+                    .mapToDouble(Double::doubleValue).min().orElse(0);
+            double max = group.getValue().values().stream()
+                    .mapToDouble(Double::doubleValue).max().orElse(0);
+            if (max - min < 1e-9) {
+                findings.add(String.format(
+                        "⚠ 注意：在「%s」下，三种召回方式加了重排后指标完全相同（%.3f）。"
+                                + "这通常说明重排看到的候选是同一批，"
+                                + "而不是三种召回方式各自的结果。",
+                        group.getKey(), min));
+                break;
             }
         }
     }

@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ragsight · RAG 诊断</title>
+<style>
+  /* 不引外部字体和 CSS 库：保持"clone 下来只需要 JDK 和 Maven" */
+  :root {
+    --bg: #0f1116;
+    --panel: #171a21;
+    --panel-2: #1e222b;
+    --border: #2a2f3a;
+    --text: #e6e8ec;
+    --muted: #9aa3b2;
+    --accent: #6ea8fe;
+    --good: #3fb950;
+    --warn: #d29922;
+    --bad: #f85149;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    background: var(--bg); color: var(--text);
+    font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+
+  header { margin-bottom: 20px; }
+  h1 { font-size: 20px; margin: 0 0 6px; font-weight: 600; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .sub code { font-family: var(--mono); color: var(--accent); }
+
+  /* 参数区 */
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px; margin-bottom: 16px;
+  }
+  .controls {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px; align-items: end;
+  }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+  select, input[type=text] {
+    width: 100%; padding: 7px 9px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--panel-2);
+    color: var(--text); font: inherit; font-size: 13px;
+  }
+  select:focus, input:focus { outline: 1px solid var(--accent); }
+  .check { display: flex; align-items: center; gap: 7px; padding-bottom: 8px; }
+  .check input { width: 15px; height: 15px; }
+  .check label { margin: 0; color: var(--text); font-size: 13px; }
+
+  button {
+    padding: 8px 18px; border-radius: 6px; border: none;
+    background: var(--accent); color: #0b1220;
+    font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  button:hover:not(:disabled) { filter: brightness(1.1); }
+
+  .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .hint.warn { color: var(--warn); }
+
+  /* 结论 */
+  .findings { display: flex; flex-direction: column; gap: 8px; }
+  .finding {
+    padding: 10px 13px; border-radius: 7px; font-size: 13px;
+    border-left: 3px solid var(--border); background: var(--panel-2);
+  }
+  .finding.good { border-left-color: var(--good); }
+  .finding.warn { border-left-color: var(--warn); }
+  .finding.bad  { border-left-color: var(--bad); }
+
+  h2 { font-size: 15px; margin: 0 0 12px; font-weight: 600; }
+
+  /* 表格 */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; white-space: nowrap; }
+  td.num, th.num { text-align: right; font-family: var(--mono); }
+  tr.baseline td { background: rgba(110,168,254,.07); }
+  .tag {
+    display: inline-block; padding: 1px 6px; border-radius: 4px;
+    font-size: 11px; background: var(--panel-2); color: var(--muted);
+    border: 1px solid var(--border); margin-left: 6px;
+  }
+  .delta-pos { color: var(--good); }
+  .delta-neg { color: var(--bad); }
+  .delta-flat { color: var(--muted); }
+
+  /* 热力图 */
+  .hm-scroll { overflow-x: auto; }
+  .hm { border-collapse: separate; border-spacing: 3px; font-size: 12px; }
+  .hm th { padding: 5px 8px; color: var(--muted); font-weight: 500; }
+  .hm th.rowhead { text-align: right; white-space: nowrap; color: var(--text); font-size: 12px; }
+  .hm td {
+    padding: 10px 14px; text-align: center; border-radius: 5px;
+    font-family: var(--mono); color: #0b1220; font-weight: 600;
+    border: none; min-width: 74px;
+  }
+  .hm td.empty { background: var(--panel-2); color: var(--muted); font-weight: 400; }
+  .hm-legend { margin-top: 10px; font-size: 12px; color: var(--muted); }
+
+  /* 柱状图 */
+  .chart { display: flex; flex-direction: column; gap: 7px; }
+  .bar-row { display: grid; grid-template-columns: minmax(180px, 260px) 1fr 52px; gap: 10px; align-items: center; }
+  .bar-label { font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-label.best { color: var(--accent); font-weight: 600; }
+  .bar-track { background: var(--panel-2); border-radius: 4px; height: 18px; overflow: hidden; }
+  .bar-fill { height: 100%; background: linear-gradient(90deg, #2d4a7c, var(--accent)); }
+  .bar-value { font-family: var(--mono); font-size: 12px; text-align: right; color: var(--muted); }
+
+  .status { color: var(--muted); font-size: 13px; padding: 10px 0; }
+  .error {
+    background: rgba(248,81,73,.1); border: 1px solid var(--bad);
+    border-radius: 8px; padding: 13px; font-size: 13px;
+    white-space: pre-wrap; color: #ffb4ae;
+  }
+  .meta { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>ragsight · RAG 诊断</h1>
+    <div class="sub">
+      把检索拆成能单独量的几步，看瓶颈在哪一段。结论由固定规则从指标推导，不经过大模型。
+    </div>
+  </header>
+
+  <!-- 参数区 -->
+  <div class="panel">
+    <div class="controls">
+      <div>
+        <label for="corpus">语料</label>
+        <select id="corpus"></select>
+      </div>
+      <div>
+        <label for="chunkSize">切分窗口（字符）</label>
+        <select id="chunkSize"></select>
+      </div>
+      <div>
+        <label for="topK">召回条数 topK</label>
+        <select id="topK"></select>
+      </div>
+      <div class="check">
+        <input type="checkbox" id="rerank" checked>
+        <label for="rerank">顺便对比重排</label>
+      </div>
+      <div>
+        <button id="run">跑诊断</button>
+      </div>
+    </div>
+
+    <div class="controls" style="margin-top:12px">
+      <div class="check">
+        <input type="checkbox" id="useReal">
+        <label for="useReal">用真实向量模型</label>
+      </div>
+      <div>
+        <label for="model">模型名</label>
+        <input type="text" id="model" value="text-embedding-v4">
+      </div>
+    </div>
+
+    <div class="hint" id="embeddingHint"></div>
+  </div>
+
+  <div id="error" class="error hidden"></div>
+
+  <div id="loading" class="status hidden">正在跑诊断……</div>
+
+  <!-- 结果区 -->
+  <div id="results" class="hidden">
+
+    <div class="panel">
+      <h2>诊断结论</h2>
+      <div class="meta" id="resultMeta"></div>
+      <div class="findings" id="findings"></div>
+    </div>
+
+    <div class="panel">
+      <h2>实验矩阵 <span class="tag" id="hmMetric"></span></h2>
+      <div class="hm-scroll">
+        <table class="hm" id="heatmap"></table>
+      </div>
+      <div class="hm-legend" id="hmLegend"></div>
+    </div>
+
+    <div class="panel">
+      <h2>排序质量对比（按 MRR 从高到低）</h2>
+      <div class="chart" id="chart"></div>
+    </div>
+
+    <div class="panel">
+      <h2>指标明细</h2>
+      <div class="hm-scroll">
+        <table id="table"></table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// 极简前端：不引框架、不引图表库、不打包。
+// 页面只有一个，逻辑就是"拿数据 → 填 DOM"，用不着那些东西。
+
+const $ = id => document.getElementById(id);
+let options = null;
+
+// ---------------------------------------------------------------
+// 初始化
+// ---------------------------------------------------------------
+async function loadOptions() {
+  try {
+    const resp = await fetch('api/options');
+    options = await resp.json();
+  } catch (e) {
+    showError('连不上服务。请确认服务已启动。\n' + e);
+    return;
+  }
+
+  fillSelect($('corpus'), options.corpora.map(c => ({
+    value: c.id,
+    label: c.name,
+    title: c.description
+  })), options.defaultCorpusId);
+
+  fillSelect($('chunkSize'), options.chunkSizes.map(v => ({ value: v, label: v + ' 字' })), 90);
+  fillSelect($('topK'), options.topKs.map(v => ({ value: v, label: v })), 5);
+
+  // 语料说明跟着选择变，让人知道选的是哪批文档
+  $('corpus').addEventListener('change', updateCorpusHint);
+  updateCorpusHint();
+
+  // 环境里没有 Key 时把开关禁掉，免得点了报错还不知道为什么
+  $('useReal').disabled = !options.realEmbeddingConfigured;
+  $('embeddingHint').textContent = options.embeddingHint;
+  $('embeddingHint').className = options.realEmbeddingConfigured ? 'hint' : 'hint warn';
+
+  runDiagnosis();
+}
+
+function fillSelect(el, items, defaultValue) {
+  el.innerHTML = '';
+  for (const it of items) {
+    const o = document.createElement('option');
+    o.value = it.value;
+    o.textContent = it.label;
+    if (it.title) o.title = it.title;
+    if (String(it.value) === String(defaultValue)) o.selected = true;
+    el.appendChild(o);
+  }
+}
+
+function updateCorpusHint() {
+  const selected = options.corpora.find(c => c.id === $('corpus').value);
+  if (selected) $('corpus').title = selected.description;
+}
+
+// ---------------------------------------------------------------
+// 跑诊断
+// ---------------------------------------------------------------
+async function runDiagnosis() {
+  if (!options) return;
+
+  $('run').disabled = true;
+  $('error').classList.add('hidden');
+  $('results').classList.add('hidden');
+  $('loading').classList.remove('hidden');
+
+  const body = {
+    corpusId: $('corpus').value,
+    chunkSize: Number($('chunkSize').value),
+    topK: Number($('topK').value),
+    includeRerank: $('rerank').checked,
+    embeddingEnabled: $('useReal').checked,
+    embeddingModel: $('model').value
+  };
+
+  try {
+    const resp = await fetch('api/diagnose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      showError(data.message || '诊断失败');
+      return;
+    }
+    render(data);
+  } catch (e) {
+    showError('请求失败：' + e);
+  } finally {
+    $('run').disabled = false;
+    $('loading').classList.add('hidden');
+  }
+}
+
+function showError(msg) {
+  const el = $('error');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  $('loading').classList.add('hidden');
+  $('run').disabled = false;
+}
+
+// ---------------------------------------------------------------
+// 渲染
+// ---------------------------------------------------------------
+function render(d) {
+  $('results').classList.remove('hidden');
+
+  $('resultMeta').textContent =
+    `${d.corpusName} · ${d.caseCount} 个用例（负样本 ${d.negativeCaseCount} 个）· ` +
+    `${d.experimentCount} 次实验 · 耗时 ${d.elapsedMillis} ms · 基准：${d.baselineName}`;
+
+  renderFindings(d.findings);
+  renderHeatmap(d.heatmap);
+  renderChart(d.chart);
+  renderTable(d);
+}
+
+function renderFindings(findings) {
+  const box = $('findings');
+  box.innerHTML = '';
+  for (const f of findings) {
+    const div = document.createElement('div');
+    div.className = 'finding ' + f.level.toLowerCase();
+    div.textContent = f.text;
+    box.appendChild(div);
+  }
+}
+
+/**
+ * 热力图：颜色越深表示值越高。
+ *
+ * 用 HSL 从暗蓝到亮青，比红绿渐变更易读，也不会让色盲用户完全看不出差别
+ * （色盲对明度差比对红绿差敏感得多）。
+ */
+function renderHeatmap(hm) {
+  $('hmMetric').textContent = hm.metricName;
+
+  const table = $('heatmap');
+  table.innerHTML = '';
+
+  // 表头
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  headRow.appendChild(document.createElement('th'));
+  for (const col of hm.columnLabels) {
+    const th = document.createElement('th');
+    th.textContent = col;
+    headRow.appendChild(th);
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  // 数据行
+  const tbody = document.createElement('tbody');
+  const span = Math.max(hm.maxValue - hm.minValue, 1e-9);
+
+  for (let r = 0; r < hm.rowLabels.length; r++) {
+    const tr = document.createElement('tr');
+
+    const th = document.createElement('th');
+    th.className = 'rowhead';
+    th.textContent = hm.rowLabels[r];
+    tr.appendChild(th);
+
+    for (let c = 0; c < hm.columnLabels.length; c++) {
+      const td = document.createElement('td');
+      const v = hm.values[r][c];
+
+      if (v === null || Number.isNaN(v)) {
+        td.className = 'empty';
+        td.textContent = '—';
+      } else {
+        const t = (v - hm.minValue) / span;          // 0 到 1
+        // 明度从 82% 降到 42%、色相从 210 转到 185，值越高越亮越青
+        const light = 82 - t * 40;
+        const hue = 210 - t * 25;
+        td.style.background = `hsl(${hue}, 70%, ${light}%)`;
+        td.textContent = v.toFixed(3);
+        td.title = `${hm.rowLabels[r]} / ${hm.columnLabels[c]}：${v.toFixed(4)}`;
+      }
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+
+  $('hmLegend').textContent =
+    `${hm.metricName} 范围 ${hm.minValue.toFixed(3)} ~ ${hm.maxValue.toFixed(3)}，` +
+    `颜色越亮越高。行是切分方案（含是否重排），列是召回方式。`;
+}
+
+function renderChart(chart) {
+  const box = $('chart');
+  box.innerHTML = '';
+
+  for (let i = 0; i < chart.labels.length; i++) {
+    const row = document.createElement('div');
+    row.className = 'bar-row';
+
+    const label = document.createElement('div');
+    label.className = 'bar-label' + (chart.labels[i] === chart.bestLabel ? ' best' : '');
+    label.textContent = chart.labels[i];
+    label.title = chart.labels[i];
+
+    const track = document.createElement('div');
+    track.className = 'bar-track';
+    const fill = document.createElement('div');
+    fill.className = 'bar-fill';
+    const v = chart.mrr[i];
+    fill.style.width = Math.max(0, Math.min(1, v)) * 100 + '%';
+    track.appendChild(fill);
+
+    const value = document.createElement('div');
+    value.className = 'bar-value';
+    value.textContent = v.toFixed(3);
+
+    row.append(label, track, value);
+    box.appendChild(row);
+  }
+}
+
+function renderTable(d) {
+  const table = $('table');
+  table.innerHTML = '';
+
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  for (const h of ['切分方案', '召回方式']) {
+    const th = document.createElement('th');
+    th.textContent = h;
+    headRow.appendChild(th);
+  }
+  for (const m of d.metricNames) {
+    const th = document.createElement('th');
+    th.className = 'num';
+    th.textContent = m;
+    headRow.appendChild(th);
+  }
+  const thDelta = document.createElement('th');
+  thDelta.className = 'num';
+  thDelta.textContent = '相对基准（' + d.metricNames[1] + '）';
+  headRow.appendChild(thDelta);
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  for (const row of d.rows) {
+    const tr = document.createElement('tr');
+    if (row.baseline) tr.className = 'baseline';
+
+    const tdChunk = document.createElement('td');
+    tdChunk.textContent = row.chunkingLabel;
+    if (row.reranked) {
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.textContent = '重排';
+      tdChunk.appendChild(tag);
+    }
+
+    const tdRet = document.createElement('td');
+    tdRet.textContent = row.retrieverLabel;
+    if (row.baseline) {
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.textContent = '基准';
+      tdRet.appendChild(tag);
+    }
+
+    tr.append(tdChunk, tdRet);
+
+    for (const m of d.metricNames) {
+      const td = document.createElement('td');
+      td.className = 'num';
+      const v = row.scores[m];
+      td.textContent = (v === null || Number.isNaN(v)) ? '—' : v.toFixed(3);
+      tr.appendChild(td);
+    }
+
+    // 差值单独一列：正数绿、负数红、接近 0 灰
+    const tdDelta = document.createElement('td');
+    tdDelta.className = 'num';
+    const dm = row.deltas[d.metricNames[1]];
+    if (dm === undefined || dm === null || Number.isNaN(dm)) {
+      tdDelta.textContent = '—';
+      tdDelta.className += ' delta-flat';
+    } else {
+      tdDelta.textContent = (dm >= 0 ? '+' : '') + dm.toFixed(3);
+      tdDelta.className += ' ' + (Math.abs(dm) < 0.005 ? 'delta-flat'
+                                : (dm > 0 ? 'delta-pos' : 'delta-neg'));
+    }
+    tr.appendChild(tdDelta);
+
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+}
+
+// ---------------------------------------------------------------
+$('run').addEventListener('click', runDiagnosis);
+$('rerank').addEventListener('change', runDiagnosis);
+loadOptions();
+</script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>cn.qiyec.ragsight</groupId>
+    <artifactId>ragsight-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>ragsight-web</artifactId>
+  <name>ragsight :: web</name>
+  <description>
+    Web 层：HTTP 接口 + 单页前端。让人能在浏览器里调参数、看热力图。
+
+    为什么引入 Spring Boot，见 docs/adr/005-web-layer-and-spring-boot.md。
+    边界：domain 和 application 仍然零第三方依赖，由架构测试守住。
+    这一层只是换了个人机界面，不改变诊断逻辑——
+    结论仍然由固定规则推导，不经过大模型。
+  </description>
+
+  <dependencies>
+    <dependency>
+      <groupId>cn.qiyec.ragsight</groupId>
+      <artifactId>ragsight-application</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>cn.qiyec.ragsight</groupId>
+      <artifactId>ragsight-infrastructure</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <!-- Web 服务。静态资源托管、JSON 编解码、依赖注入都由它提供 -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>ragsight-web</finalName>
+    <plugins>
+      <!-- 打成可以直接 java -jar 启动的可执行 jar -->
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <version>${spring-boot.version}</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>repackage</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

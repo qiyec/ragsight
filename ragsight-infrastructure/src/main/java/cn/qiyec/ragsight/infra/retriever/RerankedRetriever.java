@@ -1,5 +1,6 @@
 package cn.qiyec.ragsight.infra.retriever;
 
+import cn.qiyec.ragsight.application.ExperimentPlan;
 import cn.qiyec.ragsight.domain.retrieval.Reranker;
 import cn.qiyec.ragsight.domain.retrieval.RetrievalSource;
 import cn.qiyec.ragsight.domain.retrieval.Retriever;
@@ -22,9 +23,6 @@ import java.util.List;
  * 如果召回本身不够，加重排是白花钱。
  */
 public final class RerankedRetriever implements Retriever {
-
-    /** 重排前多要多少候选。倍数太小会限制重排的效果。 */
-    private static final int CANDIDATE_MULTIPLIER = 4;
 
     private final Retriever delegate;
     private final Reranker reranker;
@@ -55,7 +53,7 @@ public final class RerankedRetriever implements Retriever {
         }
 
         // 多要一些候选给重排留空间；但不能超过最终要的条数本身
-        int candidatesNeeded = Math.max(requestedTopK, requestedTopK * CANDIDATE_MULTIPLIER);
+        int candidatesNeeded = requestedTopK * ExperimentPlan.RERANK_CANDIDATE_MULTIPLIER;
         List<ScoredChunk> candidates = delegate.retrieve(query, candidatesNeeded);
 
         List<ScoredChunk> reranked = reranker.rerank(query, candidates, requestedTopK);
@@ -79,6 +77,6 @@ public final class RerankedRetriever implements Retriever {
 
     /** 重排前会召回多少候选，供报告说明。 */
     public int candidateCount() {
-        return topK * CANDIDATE_MULTIPLIER;
+        return topK * ExperimentPlan.RERANK_CANDIDATE_MULTIPLIER;
     }
 }

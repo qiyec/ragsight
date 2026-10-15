@@ -37,19 +37,31 @@ public final class CorpusPreparation {
      * @param evalFile  测试集文件
      */
     public static CorpusPreparation from(Path corpusDir, Path evalFile) {
-        DocumentReader reader = new DirectoryDocumentReader(corpusDir);
+        return from(new DirectoryDocumentReader(corpusDir), EvalFileReader.read(evalFile));
+    }
+
+    /**
+     * 从任意文档来源和一份已经读好的测试集构造。
+     *
+     * <p>命令行和 Web 两个入口都走这里——内置演示语料和读磁盘的语料
+     * 因此走**完全相同**的后续流程。演示能跑通就说明真实路径也能跑通，
+     * 不需要维护两套。
+     *
+     * @param reader   文档来源。可以是读目录的，也可以是内存里的演示数据
+     * @param caseSpec 已经读好的测试集
+     */
+    public static CorpusPreparation from(DocumentReader reader, GoldenCaseSetSpec caseSpec) {
         List<Document> documents = reader.readAll();
         if (documents.isEmpty()) {
             throw new IllegalStateException(
-                    "目录里没有可读的文档：" + corpusDir.toAbsolutePath()
-                            + "\n支持的文件类型：" + DirectoryDocumentReader.DEFAULT_EXTENSIONS);
+                    "没有读到任何文档：" + reader.describe()
+                            + "\n如果读的是目录，支持的文件类型是："
+                            + DirectoryDocumentReader.DEFAULT_EXTENSIONS);
         }
-
-        GoldenCaseSetSpec spec = EvalFileReader.read(evalFile);
 
         String description = String.format("%d 个文档（%s）",
                 documents.size(), reader.describe());
-        return new CorpusPreparation(documents, spec, description);
+        return new CorpusPreparation(documents, caseSpec, description);
     }
 
     /** 用已经准备好的材料直接构造，供测试使用。 */

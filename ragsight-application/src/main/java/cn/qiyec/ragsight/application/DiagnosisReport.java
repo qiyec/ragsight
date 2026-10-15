@@ -1,5 +1,6 @@
 package cn.qiyec.ragsight.application;
 
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -45,8 +46,14 @@ public record DiagnosisReport(
             throw new IllegalArgumentException("基准实验必须在结果里：" + baselineId);
         }
         caseIds = caseIds == null ? List.of() : List.copyOf(caseIds);
-        results = Map.copyOf(results);
-        corpusSizes = corpusSizes == null ? Map.of() : Map.copyOf(corpusSizes);
+        // 用 LinkedHashMap 包一层，**不能用 Map.copyOf**：
+        // Map.copyOf 只保证不可变，不保证保留插入顺序。而结果的顺序
+        // 决定了报告里表格的行序和热力图的行列顺序——顺序乱了，
+        // 同一个页面刷新两次列的位置可能都不一样，很难看懂。
+        results = Collections.unmodifiableMap(new LinkedHashMap<>(results));
+        corpusSizes = corpusSizes == null
+                ? Map.of()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(corpusSizes));
         findings = findings == null ? List.of() : List.copyOf(findings);
     }
 

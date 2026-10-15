@@ -114,4 +114,34 @@ class ArchitectureRulesTest {
             noClasses().that().resideInAPackage(DOMAIN)
                     .should().dependOnClassesThat()
                     .resideInAnyPackage("cn.qiyec.ragsight.infra..", "cn.qiyec.ragsight.cli..");
+
+    // ---------------------------------------------------------------
+    // Web 层的边界（ADR-005 引入 Spring Boot 时定的）
+    // ---------------------------------------------------------------
+
+    /**
+     * 用例层不许依赖 Web 层。
+     *
+     * <p>Web 是"驱动适配器"，处在最外层。cli 和 web 是两个平行的入口，
+     * 谁都不该依赖谁。如果 application 反过来依赖 web，
+     * 那就意味着"诊断逻辑需要知道有网页这回事"——这显然是错的。
+     */
+    @ArchTest
+    static final ArchRule application_与_domain_不应依赖_web =
+            noClasses().that().resideInAnyPackage(DOMAIN, APPLICATION)
+                    .should().dependOnClassesThat()
+                    .resideInAnyPackage("cn.qiyec.ragsight.web..");
+
+    /**
+     * 用例层不许依赖 Spring。
+     *
+     * <p>引入 Spring Boot 是为了 Web 界面和将来的 Agent 层。
+     * 但它绝不能渗进用例层——一旦渗进去，
+     * "诊断流程能脱离框架被完整测试"这条就保不住了。
+     */
+    @ArchTest
+    static final ArchRule application_不应依赖_spring =
+            noClasses().that().resideInAnyPackage(DOMAIN, APPLICATION)
+                    .should().dependOnClassesThat()
+                    .resideInAnyPackage("org.springframework..");
 }

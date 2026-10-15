@@ -1,4 +1,4 @@
-package cn.qiyec.ragsight.cli.demo;
+package cn.qiyec.ragsight.infra.demo;
 
 import cn.qiyec.ragsight.domain.knowledge.Document;
 import cn.qiyec.ragsight.domain.knowledge.DocumentReader;
