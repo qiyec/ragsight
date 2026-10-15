@@ -174,7 +174,10 @@ public class AgentCli implements Runnable {
                 System.out.printf("  Recall %.3f   MRR %.3f%n",
                         summary.bestRecall(), summary.bestMrr());
             }
-            System.out.printf("%n（作为对照：穷举全部组合要跑 18 次实验）%n");
+            // 这里原本还有一句"穷举全部组合要跑 18 次"——删掉了。
+            // 一是那个数写死了（只对某个切分窗口成立），二是它和
+            // 上面 finish 工具已经算好的对照重复，而且上面那个是对的。
+            // 两处说同一件事、其中一处还是错的，比不说更糟。
 
             if (!summary.engineFindings().isEmpty()) {
                 System.out.println();
