@@ -13,6 +13,7 @@ import cn.qiyec.ragsight.domain.knowledge.Document;
 import cn.qiyec.ragsight.domain.knowledge.DocumentReader;
 import cn.qiyec.ragsight.domain.knowledge.chunking.RecursiveCharacterChunkingStrategy;
 import cn.qiyec.ragsight.infra.embedding.DeterministicHashEmbedding;
+import cn.qiyec.ragsight.infra.embedding.OpenAiCompatibleEmbedding;
 import cn.qiyec.ragsight.infra.index.InMemoryVectorIndex;
 import cn.qiyec.ragsight.infra.reader.CorpusPreparation;
 import cn.qiyec.ragsight.infra.retriever.CompositeRetrieverFactory;
@@ -93,6 +94,24 @@ public final class DiagnoseCommand implements Callable<Integer> {
             defaultValue = "" + DeterministicHashEmbedding.DEFAULT_DIMENSION)
     private int embeddingDimension;
 
+    @Option(names = {"--embedding-model"},
+            description = "真实向量模型名，比如 text-embedding-v4。"
+                    + "指定它就改用真实模型，不再用离线哈希。"
+                    + "Key 从环境变量读（默认 RAGSIGHT_API_KEY）。")
+    private String embeddingModel;
+
+    @Option(names = {"--embedding-base-url"},
+            description = "向量模型接口地址。默认阿里 DashScope 的兼容接口："
+                    + "${DEFAULT-VALUE}",
+            defaultValue = OpenAiCompatibleEmbeddingOptions.DASHSCOPE_BASE_URL)
+    private String embeddingBaseUrl;
+
+    @Option(names = {"--api-key-env"},
+            description = "从哪个环境变量读 Key（默认 ${DEFAULT-VALUE}）。"
+                    + "Key 不会打印、不会写进报告，也不会落盘。",
+            defaultValue = OpenAiCompatibleEmbeddingOptions.API_KEY_ENV)
+    private String apiKeyEnv;
+
     @Option(names = {"-q", "--quiet"},
             description = "只输出报告，不打印运行提示")
     private boolean quiet;
@@ -148,21 +167,45 @@ public final class DiagnoseCommand implements Callable<Integer> {
             System.err.println("对比方案：" + plans.size() + " 种切分 × "
                     + retrievers.size() + " 种召回 = "
                     + (plans.size() * retrievers.size()) + " 次实验");
-            System.err.println("向量化方式：离线哈希，只认字面重合，"
-                    + "所以下面的绝对分数不代表真实 embedding 模型的效果");
+            if (embeddingModel == null || embeddingModel.isBlank()) {
+                System.err.println("向量化方式：离线哈希，只认字面重合，"
+                        + "所以下面的绝对分数不代表真实向量模型的效果");
+                System.err.println("想看真实效果，加 --embedding-model（见 --help）");
+            }
             System.err.println();
         }
 
         DiagnosisRequest request = new DiagnosisRequest(
                 corpusName, documents, caseSpec, plans, retrievers);
 
-        // 每个切分方案切出来的片段不一样，所以检索器要按对应的那批片段现造，
-        // 不能共用一个——共用会让后一个方案覆盖前一个的索引，结果互相污染
-        DiagnosisEngine engine = new DiagnosisEngine(corpus -> new CompositeRetrieverFactory(
-                () -> new DeterministicHashEmbedding(embeddingDimension),
-                InMemoryVectorIndex::new,
-                SimpleTokenizer::new,
-                corpus));
+        // 决定用哪个向量模型：指定了模型名就用真的，否则用离线哈希。
+        // 注意工厂是在每个切分方案下现造的——不同切分切出的片段不一样，
+        // 检索器必须按对应的片段重建，共用会让实验互相污染。
+        DiagnosisEngine engine;
+        if (embeddingModel != null && !embeddingModel.isBlank()) {
+            String apiKey = readApiKey();
+            // 探测维度和连通性。这里会真发一次请求，失败就直接停下报错，
+            // 免得跑到一半才发现 Key 不对。
+            var realEmbedding = OpenAiCompatibleEmbedding.connect(
+                    embeddingBaseUrl, apiKey, embeddingModel);
+            if (!quiet) {
+                System.err.println("向量模型：" + realEmbedding.name()
+                        + "（接口 " + embeddingBaseUrl + "）");
+                System.err.println("Key 来源：环境变量 " + apiKeyEnv + "（不会打印，也不会写进报告）");
+                System.err.println();
+            }
+            engine = new DiagnosisEngine(corpus -> new CompositeRetrieverFactory(
+                    () -> realEmbedding,
+                    InMemoryVectorIndex::new,
+                    SimpleTokenizer::new,
+                    corpus));
+        } else {
+            engine = new DiagnosisEngine(corpus -> new CompositeRetrieverFactory(
+                    () -> new DeterministicHashEmbedding(embeddingDimension),
+                    InMemoryVectorIndex::new,
+                    SimpleTokenizer::new,
+                    corpus));
+        }
 
         DiagnosisReport report = engine.diagnose(request);
 
@@ -182,6 +225,25 @@ public final class DiagnoseCommand implements Callable<Integer> {
         }
 
         return 0;
+    }
+
+    /**
+     * 从环境变量读 Key。
+     *
+     * <p>读不到就报错并说清怎么设，而不是让程序带着空 Key 去请求、
+     * 然后收到一个看不懂的 401。
+     */
+    private String readApiKey() {
+        String key = System.getenv(apiKeyEnv);
+        if (key == null || key.isBlank()) {
+            throw new IllegalStateException(String.format(
+                    "没有找到 API Key。请先设置环境变量 %s，例如：%n"
+                            + "  Windows PowerShell:  $env:%s = \"你的key\"%n"
+                            + "  Linux / macOS:       export %s=你的key%n"
+                            + "（想用别的环境变量名，加 --api-key-env 指定）",
+                    apiKeyEnv, apiKeyEnv, apiKeyEnv));
+        }
+        return key;
     }
 
     /** 决定要对比哪些切分方案。 */

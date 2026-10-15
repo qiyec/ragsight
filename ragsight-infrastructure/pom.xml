@@ -41,6 +41,12 @@
       <artifactId>slf4j-api</artifactId>
     </dependency>
 
+    <!-- 调真实向量模型接口时收发 JSON 用。只在基础设施层，domain 不许引它 -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
+
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
