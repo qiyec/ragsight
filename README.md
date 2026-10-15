@@ -121,11 +121,11 @@ mvnw.cmd verify
 ### 方式一：浏览器里用（推荐，能看热力图）
 
 ```bash
-# 打包一次（会一起产出命令行和网页两个可执行 jar）
+# 打包一次，两个可执行 jar 会分别产在各自模块的 target 下
 mvnw.cmd clean package -DskipTests
 
 # 启动服务
-java -jar ragsight-cli/target/ragsight-web.jar
+java -jar ragsight-web/target/ragsight-web.jar
 ```
 
 等它打印出 `Started RagsightWebApplication` 之后，**在浏览器地址栏输入**：

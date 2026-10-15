@@ -62,36 +62,17 @@
           </execution>
         </executions>
       </plugin>
-
       <!--
-        把可执行 jar 复制一份到 ragsight-cli/target/。
+        这里曾经有一段：打包后把 jar 复制一份到 ragsight-cli/target/，
+        让两个入口在同一个目录里，README 的路径能统一。
 
-        为什么：那样两个入口就在同一个目录里，README 里能写成一致的路径，
-        不用让人去记"网页 jar 在哪个模块的 target 下"。
-        之前我手工拷过一次，但下次构建就没了，所以固化成构建步骤。
+        撤掉了，因为它带来的麻烦大于便利：
+        服务运行时 jar 被占用，复制过去的那个文件删不掉，
+        于是 **mvnw clean verify 会直接失败**（clean 插件删不掉文件）。
+        为了少写几行路径而让构建失败，不值得。
+
+        可执行 jar 就留在各自模块的 target 下，README 里分别写清楚。
       -->
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-antrun-plugin</artifactId>
-        <version>3.1.0</version>
-        <executions>
-          <execution>
-            <id>copy-web-jar-to-cli-target</id>
-            <phase>package</phase>
-            <goals>
-              <goal>run</goal>
-            </goals>
-            <configuration>
-              <target>
-                <mkdir dir="${project.basedir}/../ragsight-cli/target"/>
-                <copy file="${project.build.directory}/ragsight-web.jar"
-                      tofile="${project.basedir}/../ragsight-cli/target/ragsight-web.jar"
-                      overwrite="true"/>
-              </target>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
     </plugins>
   </build>
 </project>
