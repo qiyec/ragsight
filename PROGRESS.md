@@ -6,7 +6,7 @@
 - **最后更新**：2026-10-14
 - **当前阶段**：P3 CLI 与诊断报告（可诊断外部文档，可对比切分与召回）
 - **远程仓库**：https://github.com/qiyec/ragsight （public，CI 全绿）
-- **规模**：186 个测试
+- **规模**：205 个测试
 
 ---
 
@@ -76,7 +76,7 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose
 | **cli** | `RagSightCli` + `DiagnoseCommand`；`DemoCorpus` + `DemoEvaluationSet` + `ReportRenderer`（Markdown） |
 | **architecture-tests** | 5 条 ArchUnit 规则，把规矩变成构建门禁 |
 
-**测试分布**：domain 80 / application 16 / infrastructure 83 / architecture 7 = **186 个，全部通过**。
+**测试分布**：domain 90 / application 16 / infrastructure 92 / architecture 7 = **205 个，全部通过**。
 
 ---
 
@@ -94,15 +94,13 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose
 
 ## ⏭️ 下一步（精确到文件）
 
-1. **`Reranker` 实现 + `LexicalOverlapReranker`**（最优先）
-   —— 接口已有、无实现。报告现在会说"瓶颈在排序、该试重排"，
-   但用户没法真的试，这是个明显的缺口。
-2. **真实向量模型适配器**
+1. **真实向量模型适配器**（最优先）
    —— 现在只有离线哈希向量化，只认字面重合，绝对分数没有参考价值。
    接一个通用的 OpenAI 兼容适配器（可配 baseUrl）就能对接
-   DashScope / DeepSeek / Ollama，前提是要有 API Key。
-3. **HTML 报告**（Markdown 已够用，优先级低于上面两项）
-4. **`docs/learn/` 学习文档**：每个知识点配可运行验证
+   DashScope / DeepSeek / Ollama。**需要 API Key 才能实测**，
+   没有的话只能写代码 + 用假客户端测。
+2. **HTML 报告**（Markdown 已够用，优先级低于上面那项）
+3. **`docs/learn/` 学习文档**：每个知识点配可运行验证
 
 ---
 
@@ -116,7 +114,7 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose
 | 4 | 本地仓库位置 | 读 `conf/settings.xml` | `D:\develop\environment\Maven\repo` |
 | 5 | 无 SDKMAN；有 Scoop/fnm/uv | `Get-Command sdk` 等 | Scoop 仅装 git/7zip/neofetch |
 | 6 | `mvnw` 换行符 | `git ls-files --eol mvnw` | `i/lf w/lf attr/text=auto eol=lf` |
-| 7 | 全量构建 | `mvnw.cmd clean verify`（JAVA_HOME 置空） | 退出码 0，186 个测试全通过 |
+| 7 | 全量构建 | `mvnw.cmd clean verify`（JAVA_HOME 置空） | 退出码 0，205 个测试全通过 |
 | 8 | **诊断报告可产出** | `java -jar ragsight-cli.jar diagnose` | 输出完整 Markdown 报告（见上方里程碑） |
 | 9 | 离线向量化实测相似度 | `DeterministicHashEmbeddingTest` | 计费规则/收费规则=0.7500；计费/收费=0.5000；无交集=0.0000 |
 | 10 | BM25 手算一致性 | `Bm25ScorerTest` | IDF=ln(10/7)=0.356674943938732 精确一致；docA=0.519658858718683 |
