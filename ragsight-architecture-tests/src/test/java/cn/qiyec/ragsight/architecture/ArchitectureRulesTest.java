@@ -192,18 +192,20 @@ class ArchitectureRulesTest {
                     .resideInAnyPackage("cn.qiyec.ragsight.cli..");
 
     /**
-     * Web 层不许依赖 Agent 层。
+     * Agent 层不许依赖网页。
      *
-     * <p>网页基本不用大模型（只有诊断 Agent 用），而 Agent 是第二层。
-     * 反过来还更严重：如果 web 依赖 agent，而 agent 又通过 diagnosis
-     * 回到 web，就绕出一个环。入口之间必须互相独立，
-     * 共用的东西放 diagnosis。
+     * <p>方向是 <b>web → agent</b>，反过来不行。
+     * 网页上有个"让 Agent 自己找瓶颈"的入口，所以 web 依赖 agent 是对的；
+     * 但 agent 不能依赖 web——那会绕成一个环，而且 web 打出来的是
+     * Spring Boot 应用，agent 依赖它意味着一堆用不上的东西。
+     *
+     * <p>两者共用的东西在 diagnosis 模块，不在 web 里。
      */
     @ArchTest
-    static final ArchRule web_层不应依赖_agent_层 =
-            noClasses().that().resideInAnyPackage("cn.qiyec.ragsight.web..")
+    static final ArchRule agent_层不应依赖_web =
+            noClasses().that().resideInAnyPackage("cn.qiyec.ragsight.agent..")
                     .should().dependOnClassesThat()
-                    .resideInAnyPackage("cn.qiyec.ragsight.agent..");
+                    .resideInAnyPackage("cn.qiyec.ragsight.web..");
 
     /**
      * 共用编排层不许依赖 Agent 层，也不许认识 Spring。

@@ -43,6 +43,16 @@ public final class DiagnosisRun {
     }
 
     /**
+     * 这次诊断的语料显示名。
+     *
+     * <p>给界面用：开始跑之前先告诉用户"在诊断哪个语料"，
+     * 否则那几十秒的等待里他不知道在等什么。
+     */
+    public String corpusLabel() {
+        return session.corpusLabel();
+    }
+
+    /**
      * 开始跑。
      *
      * <p>交给 Agent 的任务说明故意保持简短：具体怎么干写在系统提示词里，

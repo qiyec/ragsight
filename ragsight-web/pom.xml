@@ -37,6 +37,12 @@
       <artifactId>ragsight-diagnosis</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!-- 网页上的"让 Agent 自己找瓶颈"入口要用它 -->
+    <dependency>
+      <groupId>cn.qiyec.ragsight</groupId>
+      <artifactId>ragsight-agent</artifactId>
+      <version>${project.version}</version>
+    </dependency>
 
     <!-- Web 服务。静态资源托管、JSON 编解码、依赖注入都由它提供 -->
     <dependency>

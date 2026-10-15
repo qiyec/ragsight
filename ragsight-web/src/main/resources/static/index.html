@@ -294,6 +294,92 @@ table.data td.plan { color: var(--text); }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 .hidden { display: none !important; }
+
+/* ---------------- Agent 入口 ---------------- */
+.agent-box {
+  margin-top: 20px; padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.agent-title {
+  font-size: 12px; font-weight: 650; color: var(--text);
+  margin-bottom: 7px;
+}
+.agent-desc {
+  font-size: 11.5px; line-height: 1.6; color: var(--text-3);
+  margin-bottom: 11px;
+}
+.agent-desc b { color: var(--text-2); font-weight: 600; }
+.btn.ghost {
+  background: transparent; color: var(--accent);
+  border: 1px solid var(--accent-dim);
+}
+.btn.ghost:hover:not(:disabled) { background: rgba(91,157,255,.1); filter: none; }
+
+/* ---------------- Agent 思考过程 ---------------- */
+.agent-log {
+  max-height: 420px; overflow-y: auto;
+  padding: 6px 0;
+  font-size: 12.5px; line-height: 1.6;
+}
+.agent-entry {
+  padding: 7px 18px;
+  border-left: 2px solid transparent;
+  display: grid; grid-template-columns: 68px 1fr; gap: 10px;
+}
+.agent-entry + .agent-entry { border-top: 1px solid var(--border); }
+.agent-entry .tag2 {
+  font-size: 10px; font-weight: 650; letter-spacing: .03em;
+  color: var(--text-3); text-transform: uppercase;
+  padding-top: 2px;
+}
+.agent-entry .body { color: var(--text-2); min-width: 0; }
+.agent-entry .body pre {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.55;
+}
+
+/* 步骤 / 调用 / 返回 用不同的左边框色，扫一眼能分清 */
+.agent-entry.step { border-left-color: var(--border-strong); }
+.agent-entry.step .tag2 { color: var(--text-3); }
+.agent-entry.call { border-left-color: var(--accent-dim); background: rgba(91,157,255,.04); }
+.agent-entry.call .tag2 { color: var(--accent); }
+.agent-entry.result { border-left-color: var(--good); background: rgba(67,196,99,.035); }
+.agent-entry.result .tag2 { color: var(--good); }
+.agent-entry.err { border-left-color: var(--bad); background: rgba(239,95,95,.05); }
+.agent-entry.err .tag2 { color: var(--bad); }
+.agent-entry .tool-name {
+  font-family: var(--mono); font-weight: 650; color: var(--text);
+}
+
+.agent-summary { font-size: 13px; line-height: 1.7; color: var(--text-2); }
+.agent-summary .conclusion {
+  white-space: pre-wrap; color: var(--text);
+  padding: 14px 16px; background: var(--surface-2);
+  border-radius: var(--radius-sm); border: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+.agent-summary .facts {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-bottom: 14px;
+}
+.agent-summary .fact {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 11px 13px;
+}
+.agent-summary .fact .fk {
+  font-size: 10.5px; color: var(--text-3); font-weight: 600;
+  letter-spacing: .04em; text-transform: uppercase;
+}
+.agent-summary .fact .fv {
+  font-family: var(--mono); font-size: 18px; font-weight: 600;
+  color: var(--text); margin-top: 5px; line-height: 1.2;
+}
+.agent-summary .fact .fv.small { font-size: 13px; line-height: 1.4; }
+.agent-summary h3 {
+  font-size: 12px; color: var(--text-3); font-weight: 650;
+  letter-spacing: .04em; text-transform: uppercase; margin: 16px 0 9px;
+}
 </style>
 </head>
 <body>
@@ -343,6 +429,18 @@ table.data td.plan { color: var(--text); }
     <button class="btn" id="run">跑诊断</button>
 
     <div class="note" id="embeddingHint"></div>
+
+    <!-- 让 Agent 自己找瓶颈：需要大模型凭据，所以单独一栏，措辞说清差别 -->
+    <div class="agent-box">
+      <div class="agent-title">让 Agent 自己找瓶颈</div>
+      <p class="agent-desc">
+        上面那个是<b>你把组合定好、它去跑</b>。<br>
+        这个是<b>它自己决定试什么</b>：先跑基准，看结果，再决定下一步改哪一个，
+        通常 3 到 4 轮就够，而不是把 18 种组合跑一遍。
+      </p>
+      <button class="btn ghost" id="runAgent">让 Agent 试</button>
+      <div class="note" id="agentHint"></div>
+    </div>
   </aside>
 
   <!-- ============ 右侧：结果 ============ -->
@@ -353,6 +451,28 @@ table.data td.plan { color: var(--text); }
       <div class="spinner"></div>
       <span id="loadingText">正在跑诊断……</span>
     </div>
+
+    <!-- Agent 的思考过程。放在最上面，因为用户最想知道"它在干嘛" -->
+    <section id="agentPanel" class="panel hidden">
+      <div class="panel-head">
+        <h2>Agent 在做什么</h2>
+        <span class="meta" id="agentStatus"></span>
+      </div>
+      <div class="panel-body tight">
+        <div class="agent-log" id="agentLog"></div>
+      </div>
+    </section>
+
+    <!-- Agent 跑完的总结 -->
+    <section id="agentResult" class="panel hidden">
+      <div class="panel-head">
+        <h2>Agent 的结论</h2>
+        <span class="meta" id="agentMeta"></span>
+      </div>
+      <div class="panel-body">
+        <div class="agent-summary" id="agentSummary"></div>
+      </div>
+    </section>
 
     <div id="blank" class="panel">
       <div class="blank">正在读取可选项……</div>
@@ -839,9 +959,269 @@ function renderTable(d) {
 }
 
 // ---------------------------------------------------------------
+// 诊断 Agent：用 SSE 把思考过程实时显示出来
+//
+// 为什么用 fetch 读流而不是浏览器原生的 EventSource：
+// EventSource 只支持 GET，而这里要 POST 传参数。
+// fetch + ReadableStream 在现在的主流浏览器里都支持。
+// ---------------------------------------------------------------
+
+let agentOptions = null;
+
+async function loadAgentOptions() {
+  try {
+    const resp = await fetch('api/agent/options');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    agentOptions = await resp.json();
+  } catch (e) {
+    $('agentHint').textContent = '读取不到 Agent 的配置：' + e;
+    $('runAgent').disabled = true;
+    return;
+  }
+
+  const ok = agentOptions.modelConfigured;
+  $('runAgent').disabled = !ok;
+  $('agentHint').textContent = agentOptions.hint;
+  $('agentHint').className = 'note' + (ok ? '' : ' warn');
+  $('runAgent').title = ok ? '' : '需要环境变量 ' + agentOptions.apiKeyEnv;
+}
+
+async function runAgent() {
+  // Agent 和"跑诊断"是两条不同的路，互相不干扰：
+  // 这里不隐藏对比矩阵的结果，方便左右对照
+  $('runAgent').disabled = true;
+  $('agentPanel').classList.remove('hidden');
+  $('agentResult').classList.add('hidden');
+  $('agentLog').innerHTML = '';
+  $('agentStatus').textContent = '正在启动……';
+
+  addAgentEntry('step', '准备', '正在读取语料并建立基准……');
+
+  const body = {
+    corpusId: $('corpus').value,
+    topK: Number($('topK').value),
+    model: (agentOptions && agentOptions.models[0]) || 'dashscope:qwen-plus',
+    maxIters: 12
+  };
+
+  try {
+    const resp = await fetch('api/agent/diagnose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      addAgentEntry('err', '失败', 'HTTP ' + resp.status + '：' + text.slice(0, 300));
+      $('agentStatus').textContent = '启动失败';
+      return;
+    }
+
+    await readSseStream(resp.body);
+  } catch (e) {
+    addAgentEntry('err', '失败', String(e));
+    $('agentStatus').textContent = '出错';
+  } finally {
+    $('runAgent').disabled = false;
+  }
+}
+
+/** 逐块读 SSE 流。事件之间用空行分隔。 */
+async function readSseStream(stream) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // SSE 用空行分隔事件块
+    let sep;
+    while ((sep = buffer.indexOf('\n\n')) >= 0) {
+      const raw = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      handleSseEvent(raw);
+    }
+  }
+  if ($('agentStatus').textContent === '正在启动……') {
+    $('agentStatus').textContent = '已结束';
+  }
+}
+
+/** 解析一个 SSE 事件块，取出 event 名和 data。 */
+function handleSseEvent(raw) {
+  let name = 'message';
+  const dataLines = [];
+
+  for (const line of raw.split('\n')) {
+    if (line.startsWith('event:')) {
+      name = line.slice(6).trim();
+    } else if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).trimStart());
+    }
+  }
+  if (dataLines.length === 0) return;
+
+  let payload;
+  try {
+    payload = JSON.parse(dataLines.join('\n'));
+  } catch (e) {
+    return;   // 解析不了就跳过，别让一个坏事件打断整条流
+  }
+  routeAgentEvent(name, payload);
+}
+
+function routeAgentEvent(name, d) {
+  switch (name) {
+    case 'started':
+      $('agentStatus').textContent = '正在诊断：' + d.corpusLabel;
+      break;
+
+    case 'step':
+      addAgentEntry('step', '思考', d.text);
+      break;
+
+    case 'toolCall':
+      addAgentEntry('call', '调用', d.tool, d.arguments);
+      break;
+
+    case 'toolResult':
+      addAgentEntry('result', '返回', d.tool, d.result);
+      break;
+
+    case 'error':
+      addAgentEntry('err', '失败', d.message);
+      $('agentStatus').textContent = '出错';
+      break;
+
+    case 'summary':
+      renderAgentSummary(d);
+      $('agentStatus').textContent = '完成';
+      break;
+  }
+}
+
+/**
+ * 往日志里加一条。
+ *
+ * 自动滚到底：Agent 跑起来日志会越来越长，
+ * 不跟着滚的话用户看到的是最早那几条，会以为卡住了。
+ */
+function addAgentEntry(kind, tag, title, detail) {
+  const log = $('agentLog');
+  const el = document.createElement('div');
+  el.className = 'agent-entry ' + kind;
+
+  const t = document.createElement('div');
+  t.className = 'tag2';
+  t.textContent = tag;
+
+  const body = document.createElement('div');
+  body.className = 'body';
+
+  if (detail === undefined) {
+    body.textContent = title;
+  } else {
+    const head = document.createElement('div');
+    const name = document.createElement('span');
+    name.className = 'tool-name';
+    name.textContent = title || '';
+    head.appendChild(name);
+    if (kind === 'call' && detail) {
+      const args = document.createElement('span');
+      args.textContent = '  ' + detail;
+      args.style.color = 'var(--text-3)';
+      head.appendChild(args);
+    }
+    body.appendChild(head);
+
+    if (kind === 'result' && detail) {
+      const pre = document.createElement('pre');
+      // 工具返回是给模型看的表格，直接原样显示，保留换行
+      pre.textContent = detail.length > 1400
+        ? detail.slice(0, 1400) + '\n……（内容较长，已截断）'
+        : detail;
+      body.appendChild(pre);
+    } else if (kind !== 'call' && detail) {
+      const pre = document.createElement('pre');
+      pre.textContent = detail;
+      body.appendChild(pre);
+    }
+  }
+
+  el.append(t, body);
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+}
+
+function renderAgentSummary(d) {
+  const box = $('agentSummary');
+  box.innerHTML = '';
+
+  $('agentMeta').textContent =
+    `${d.configsTried} 个配置 · ${d.experimentCount} 次实验 · ` +
+    `${(d.elapsedMillis / 1000).toFixed(1)} 秒`;
+
+  const c = document.createElement('div');
+  c.className = 'conclusion';
+  c.textContent = d.conclusion || '（模型没有给出总结）';
+  box.appendChild(c);
+
+  // 硬数据：这几个数字不来自大模型，可以放心引用
+  const facts = document.createElement('div');
+  facts.className = 'facts';
+
+  addAgentFact(facts, '推荐配置', d.bestConfig || '—', true);
+  addAgentFact(facts, 'MRR',
+    Number.isNaN(d.bestMrr) ? '—' : d.bestMrr.toFixed(3), false);
+  addAgentFact(facts, 'Recall',
+    Number.isNaN(d.bestRecall) ? '—' : d.bestRecall.toFixed(3), false);
+  addAgentFact(facts, '实验次数',
+    `${d.experimentCount} 次（穷举要 18 次）`, true);
+  box.appendChild(facts);
+
+  if (d.engineFindings && d.engineFindings.length) {
+    const h = document.createElement('h3');
+    h.textContent = '诊断引擎的结论（由固定规则推导，不经过大模型）';
+    box.appendChild(h);
+
+    const list = document.createElement('div');
+    list.className = 'findings';
+    // 去重：Agent 跑了好几批，同一句结论会重复出现
+    [...new Set(d.engineFindings)].forEach(text => {
+      const el = document.createElement('div');
+      el.className = 'finding info';
+      const ic = document.createElement('div');
+      ic.className = 'ic';
+      ic.textContent = '·';
+      const tx = document.createElement('div');
+      tx.textContent = text;
+      el.append(ic, tx);
+      list.appendChild(el);
+    });
+    box.appendChild(list);
+  }
+
+  $('agentResult').classList.remove('hidden');
+}
+
+function addAgentFact(box, key, value, small) {
+  const el = document.createElement('div');
+  el.className = 'fact';
+  el.innerHTML =
+    `<div class="fk">${esc(key)}</div>` +
+    `<div class="fv${small ? ' small' : ''}">${esc(value)}</div>`;
+  box.appendChild(el);
+}
+
+// ---------------------------------------------------------------
 $('run').addEventListener('click', runDiagnosis);
 $('rerank').addEventListener('change', runDiagnosis);
-loadOptions();
+$('runAgent').addEventListener('click', runAgent);
+loadOptions().then(loadAgentOptions);
 </script>
 </body>
 </html>
