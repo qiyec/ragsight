@@ -6,7 +6,7 @@
 - **最后更新**：2026-10-14
 - **当前阶段**：P5 第二层已完成（诊断 Agent 会自己决定试什么）；下一步：用真实 Key 实测 Agent
 - **远程仓库**：https://github.com/qiyec/ragsight （public，CI 全绿）
-- **规模**：275 个测试
+- **规模**：276 个测试
 
 ---
 
@@ -177,21 +177,53 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose
 | 工具注册 schema 检查 | ✅ 6 个，确认 @Tool 反射注册有效 |
 | **Agent 循环（假模型驱动）** | ✅ **7 个**，确认工具真的被执行、结果真的回传 |
 | 网页上的 Agent 入口（SSE 实时推送） | ✅ 接口实测，缺 Key 时正确报错 |
-| **真实调用大模型跑通** | ❌ **未验证**，需要 `DASHSCOPE_API_KEY` |
+| **真实调用大模型跑通** | ✅ **已验证**，见下节 |
 
-### 下一步要做的第一件事
+### 真实运行结果（已验证）
 
-```bash
-set DASHSCOPE_API_KEY=你的key
-# 然后跑一次真实诊断，确认 Agent 真的会按预期做单变量对比，
-# 而不是退化成穷举
+环境里已有的 Key 叫 `AI_DASHSCOPE_API_KEY`，而 AgentScope 认的是
+`DASHSCOPE_API_KEY`，所以要转一下：
+
+```powershell
+$env:DASHSCOPE_API_KEY = [Environment]::GetEnvironmentVariable("AI_DASHSCOPE_API_KEY","User")
+java -jar ragsight-agent/target/ragsight-agent-exec.jar diagnose
 ```
 
-**未验证的部分要说清楚**：工具的逻辑、提示词、Hook 都只做到了编译通过和架构合规，
-没有真正让大模型跑过。第一次跑可能会暴露：
-- 模型不按"一次只改一个"的要求做
-- 工具返回值太长或格式不合适，模型读不懂
-- maxIters=12 不够或太多
+实测输出（退出码 0）：
+
+```
+[调用] run_baseline(chunk_size=120)          基准，6 组
+[调用] compare_one_change(rerank=true)       只改重排
+[调用] compare_one_change(chunk_size=90)     只改切分窗口
+[调用] compare_one_change(chunk_size=200)
+[调用] compare_one_change(chunk_size=300)
+[调用] compare_one_change(chunk_size=60)
+[调用] finish()
+
+一共跑了 16 次实验，试过 11 个配置，用时 15.9 秒
+最好的配置：递归切分 200 字 · 仅关键词召回
+  Recall 1.000   MRR 0.938（基准 0.906）
+```
+
+**关键结论：模型确实按「一次只改一个」在做。**
+6 次 `compare_one_change` 全是单变量，没有一次同时改两样。
+两次独立运行走的是同一条 7 步路径——工具设计加上提示词约束，
+这个行为是稳的。
+
+两个没有写在提示词里、模型自己做的决定：
+
+- 先试「关键词召回」，而不是基准里最优的「向量召回」
+- 试到 300 字无增益后，改试更小的 60 字（而不是继续加大）
+
+### 真实运行暴露的两个问题（已修）
+
+1. **报告里的「穷举要跑 18 次」是写死的。**
+   那只对「切分窗口固定 90 字」成立。实际跑的是 120 字档，
+   穷举只要 12 次，而它跑了 16 次——**反而更多**，
+   报告却还在拿一个错的对照数说「省了」。
+   改成把对照数算出来再报，并且真的没省时要说出来。
+
+2. **「重排 关 → true」读起来别扭。** 改成「关 → 开」。
 
 ### 这一步踩到的坑（两个都值得记）
 
