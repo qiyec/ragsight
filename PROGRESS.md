@@ -4,9 +4,9 @@
 > **纪律**：每个「✅ 已完成」必须附带**实际执行的命令 + 实际输出**，不接受"应该能跑"。
 
 - **最后更新**：2026-10-14
-- **当前阶段**：P4 Web 层（可浏览器操作）；下一步：AgentScope 诊断 Agent（第二层）
+- **当前阶段**：P5 第二层已完成（诊断 Agent 会自己决定试什么）；下一步：用真实 Key 实测 Agent
 - **远程仓库**：https://github.com/qiyec/ragsight （public，CI 全绿）
-- **规模**：223 个测试
+- **规模**：228 个测试
 
 ---
 
@@ -158,3 +158,49 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose
 | `docs/adr/003-why-diagnostic-tool-not-framework.md` | 为什么不造框架（含官方能力核查证据） |
 | `docs/adr/004-bm25-and-tokenizer-decoupling.md` | BM25 归属与分词抽成接口 |
 | `docs/setup/environment.md` | 环境要求、实测状态、排查清单 |
+
+---
+
+## 第二层（诊断 Agent）—— 已完成，但**没有真实环境实测**
+
+新增 `ragsight-agent`，基于 AgentScope 2.0.4。核心是**每个工具只改一个东西**：
+`compare_one_change` 每次只动一个参数，所以效果能归因。
+
+| 项 | 状态 |
+|---|---|
+| 工具集（run_baseline / compare_one_change / list_attempts / finish） | ✅ 编译通过 |
+| 系统提示词（要求一次只改一个东西） | ✅ |
+| 进度上报（AgentScope Hook） | ✅ |
+| 架构规则（不依赖 agent / 不依赖 agentscope 等 7 条） | ✅ 已验证会拦人 |
+| **真实调用大模型跑通** | ❌ **未验证**，需要 `DASHSCOPE_API_KEY` |
+
+### 下一步要做的第一件事
+
+```bash
+set DASHSCOPE_API_KEY=你的key
+# 然后跑一次真实诊断，确认 Agent 真的会按预期做单变量对比，
+# 而不是退化成穷举
+```
+
+**未验证的部分要说清楚**：工具的逻辑、提示词、Hook 都只做到了编译通过和架构合规，
+没有真正让大模型跑过。第一次跑可能会暴露：
+- 模型不按"一次只改一个"的要求做
+- 工具返回值太长或格式不合适，模型读不懂
+- maxIters=12 不够或太多
+
+### 这一步踩到的坑（两个都值得记）
+
+1. **"编译通过"可能是假象。**
+   最初让 agent 依赖 web，`mvnw -pl ragsight-agent -am compile` 通过了。
+   但那是 `-am` 让 web 以模块形式参与反应堆，classes 目录恰好在 classpath 上。
+   独立构建立刻失败：Spring Boot 打的是可执行胖包，类在 `BOOT-INF/classes` 下，
+   根本不能当依赖。**结论：验证跨模块依赖时不能只看 `-am` 的构建结果。**
+
+2. **Spring Boot 的胖包会让 ArchUnit 失效。**
+   新加的"web 不应依赖 agent"规则报 `failed to check any classes`。
+   原因是 ArchUnit 读不了 `BOOT-INF/classes` 里的类。
+   修法是给 `spring-boot-maven-plugin` 加 `classifier=exec`，
+   主产物回到普通薄 jar。
+
+   注意这个规则**报错了而不是静默通过**——因为架构测试设了
+   `failOnEmptyShould(true)`。这条设置救了一次。
