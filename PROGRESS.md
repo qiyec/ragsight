@@ -6,7 +6,7 @@
 - **最后更新**：2026-10-14
 - **当前阶段**：P5 第二层已完成（诊断 Agent 会自己决定试什么）；下一步：用真实 Key 实测 Agent
 - **远程仓库**：https://github.com/qiyec/ragsight （public，CI 全绿）
-- **规模**：261 个测试
+- **规模**：274 个测试
 
 ---
 
@@ -174,6 +174,8 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose
 | 架构规则（不依赖 agent / 不依赖 agentscope 等 7 条） | ✅ 已验证会拦人 |
 | 命令行入口 `diagnose` | ✅ `--list` 和缺 Key 提示已实测 |
 | 工具逻辑测试（不调大模型） | ✅ **33 个**，抓出 3 个真 bug |
+| 工具注册 schema 检查 | ✅ 6 个，确认 @Tool 反射注册有效 |
+| **Agent 循环（假模型驱动）** | ✅ **7 个**，确认工具真的被执行、结果真的回传 |
 | 网页上的 Agent 入口（SSE 实时推送） | ✅ 接口实测，缺 Key 时正确报错 |
 | **真实调用大模型跑通** | ❌ **未验证**，需要 `DASHSCOPE_API_KEY` |
 
@@ -233,3 +235,39 @@ Agent 跑一次是几十秒级的阻塞调用，不能占着 Tomcat 的请求线
 `SseEmitter` 必须注册 `onCompletion` / `onTimeout`。
 不注册的话浏览器关掉页面后，后台还在闷头跑，
 **在真花钱和真的跑实验**。这不是"可选的好习惯"。
+---
+
+## 假模型测试：把"Agent 循环"也钉住了
+
+之前只测了工具本身，但"模型要调工具 → Agent 真的去调 → 结果回传"这段
+**一次都没验过**。它属于最典型的静默失效：不报错，只是 Agent 聊几句就结束。
+
+现在用 `ScriptedModel`（一个按剧本走的 `Model` 实现）驱动真实循环，
+不用 Key、不花钱、完全确定。覆盖 7 件事：
+
+- 工具真的被执行
+- 结果真的回传模型
+- 连续多个工具能串起来
+- 工具报错不崩 Agent
+- 没跑基准时给可读提示
+- `maxIters` 真的拦住无限循环
+- 进度 Hook 真的触发
+
+### 两个把人带偏的坑（都记在测试注释里）
+
+1. **`ToolUseBlock.content` 必须填。**
+   它是模型返回的原始参数 JSON。不填时报的是
+   `argument "content" is null`，而不是"chunk_size 缺了"——
+   这个错误信息把我往"参数名写错"的方向带了整整三轮。
+
+2. **`Msg` / `ToolUseBlock` / `ToolResultBlock` 都没重写 `toString()`。**
+   直接打印是对象身份（`ToolResultBlock@65ae095c`）。
+   断言对话内容必须一层层拆到底：
+   `msg.getTextContent()` → `Msg.getContent()` 里的 `TextBlock`
+   → `ToolResultBlock.getOutput()`。
+
+### 顺带确认
+
+**框架的参数校验是生效的**，而且校验失败时会把
+"参数验证失败，缺少 xxx，请修正后重试"作为工具结果**回传给模型**——
+模型有机会自己改对。这是好设计，值得知道。
