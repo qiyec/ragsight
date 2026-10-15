@@ -73,7 +73,7 @@ public class DiagnosisTools {
                         chunkSize, overlap, session.topK(), false));
 
         List<DiagnosisSession.Attempted> results =
-                session.run(plans, RetrieverConfig.standardBaselines());
+                session.runAndUpdateBest(plans, RetrieverConfig.standardBaselines());
 
         StringBuilder sb = new StringBuilder();
         sb.append("基准结果（语料：").append(session.corpusLabel())
@@ -150,12 +150,23 @@ public class DiagnosisTools {
         ExperimentPlan before = DiagnosisService.plan(
                 strategyOf(current), chunkSizeOf(current), session.chunkOverlap(),
                 session.topK(), current.planLabel().contains("重排"));
-        RetrieverConfig beforeRetriever = RetrieverConfig.standardBaselines().stream()
-                .filter(c -> c.id().equals(current.retrieverId()))
-                .findFirst()
-                .orElse(RetrieverConfig.standardBaselines().get(0));
+        RetrieverConfig beforeRetriever = retrieverById(current.retrieverId());
 
-        List<DiagnosisSession.Attempted> results = session.run(
+        // 防线：这一改实际上什么都没变时早点说清，别白跑一次。
+        // 校验那边已经拦了大部分，这里是兜底——
+        // 比如模型同时给出了一个不会生效的组合。
+        if (before.id().equals(changed.id())
+                && beforeRetriever.id().equals(changedRetriever.id())) {
+            return String.format(
+                    "这次改动实际上什么都没变（还是「%s · %s」），所以没法对比。"
+                            + "请换一个真正不同的值，或者用 finish 收尾。",
+                    before.displayName(), beforeRetriever.displayName());
+        }
+
+        // 用 runForComparison：这批里"改之前"不是要试的新方案，
+        // 不该让它参与"当前最好"的竞争（否则改之后变差时，
+        // 最好会被回滚到旧配置，表现上像是改动没生效）
+        List<DiagnosisSession.Attempted> results = session.runForComparison(
                 List.of(before, changed),
                 List.of(beforeRetriever, changedRetriever));
 
@@ -166,8 +177,12 @@ public class DiagnosisTools {
                 .orElse(null);
 
         if (afterResult == null) {
-            return "这次比较没有拿到两个方案的结果，可能是方案重复了。换个改动再试。";
+            return "这次改动实际上什么都没变（改之前和改之后是同一个配置），"
+                    + "所以没法对比。请换一个真正不同的值，或者用 finish 收尾。";
         }
+
+        // 只有真的更好才更新"当前最好"
+        session.applyIfBetter(afterResult);
 
         double deltaMrr = afterResult.mrr() - beforeResult.mrr();
         double deltaRecall = afterResult.recall() - beforeResult.recall();
@@ -336,14 +351,31 @@ public class DiagnosisTools {
                 session.topK(), rerank);
     }
 
-    /** 按改动造出"改之后"的召回方式。 */
+    /**
+     * 按改动造出"改之后"的召回方式。
+     *
+     * <p>用具名工厂方法而不是按 id 查表。查表写法出过一个真 bug：
+     * 查不到时会退回列表第一个，如果那个恰好和"改之前"是同一个，
+     * 同一批实验里就会出现两个同 id 的召回方案，
+     * {@code DiagnosisReport} 的校验会拦下来（它拦得对——
+     * 报告里两行一样的分不清哪个是哪个）。
+     *
+     * <p>这里的合法性由 {@link #validateChange} 保证：能走到这里，
+     * {@code newValue} 一定是三个已知 id 之一。
+     */
     private RetrieverConfig buildChangedRetriever(String change, String newValue,
                                                   DiagnosisSession.Attempted current) {
         String id = "retriever".equals(change) ? newValue.trim() : current.retrieverId();
+        return retrieverById(id);
+    }
+
+    /** 按 id 取召回方案。取不到直接抛错，不悄悄退回别的。 */
+    private static RetrieverConfig retrieverById(String id) {
         return RetrieverConfig.standardBaselines().stream()
                 .filter(c -> c.id().equals(id))
                 .findFirst()
-                .orElse(RetrieverConfig.standardBaselines().get(0));
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "不认识的召回方式：" + id));
     }
 
     /** 在结果里找出和当前最好对应的那一条。 */

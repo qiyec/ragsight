@@ -83,8 +83,23 @@ final class DiagnosisSession {
      * 所以它们的指标可以直接比——这是能归因的前提。
      */
     List<Attempted> run(List<ExperimentPlan> plans, List<RetrieverConfig> retrievers) {
-        DiagnosisService.RunOutcome outcome =
-                service.diagnosePlans(corpusId, plans, retrievers, embeddingSource);
+        // 去重：单变量对比会同时传"改之前"和"改之后"。改的是切分时，
+        // 两者的召回方式是同一个；改的是召回时，两者的切分是同一个。
+        // 所以两边都要去重，让这一批变成干净的
+        // "2 个切分 × 1 种召回" 或 "1 个切分 × 2 种召回"。
+        //
+        // 去重之后如果只剩一个组合，说明这一改什么都没变——
+        // 但不在这里报错，因为调用方更清楚该怎么措辞（见 compare_one_change。
+        // 那里的校验会给出"改成和现在一样的值"这类能看懂的话）。
+        List<ExperimentPlan> uniquePlans = distinctPlansById(plans);
+        List<RetrieverConfig> uniqueRetrievers = distinctById(retrievers);
+
+        if (uniquePlans.size() * uniqueRetrievers.size() < 2) {
+            return List.of();
+        }
+
+        DiagnosisService.RunOutcome outcome = service.diagnosePlans(
+                corpusId, uniquePlans, uniqueRetrievers, embeddingSource);
 
         DiagnosisReport report = outcome.report();
         allFindings.addAll(report.findings());
@@ -92,25 +107,91 @@ final class DiagnosisSession {
 
         List<Attempted> results = new ArrayList<>();
         for (ExperimentResult result : report.results().values()) {
-            Attempted attempt = new Attempted(
-                    result.plan().id(),
-                    result.plan().displayName(),
-                    result.retriever().id(),
-                    result.retriever().displayName(),
-                    result.score(recallName()),
-                    result.score(mrrName()),
-                    result.score(ndcgName()));
-            attempted.put(attempt.key(), attempt);
-            results.add(attempt);
-        }
-
-        // 如果还没定基准，就把这一批里 MRR 最高的当作当前最好
-        for (Attempted attempt : results) {
-            if (best == null || attempt.mrr() > best.mrr()) {
-                best = attempt;
-            }
+            results.add(record(result));
         }
         return List.copyOf(results);
+    }
+
+    /**
+     * 只跑，不碰"当前最好"。
+     *
+     * <p>单变量对比要用这个。因为对比的一批里既有"改之前"也有"改之后"，
+     * 如果顺手把它们都拿去竞争"当前最好"，就会出现：
+     * 改之后变差了，而"改之前"因为还留在批里又被选回来——
+     * 表现上像是改动没生效，实际是状态没更新对。
+     *
+     * <p>跑完由调用方决定要不要用结果更新最好，见 {@link #applyIfBetter}。
+     */
+    List<Attempted> runForComparison(List<ExperimentPlan> plans,
+                                     List<RetrieverConfig> retrievers) {
+        return run(plans, retrievers);
+    }
+
+    /**
+     * 跑一批并让结果参与"当前最好"的竞争。
+     *
+     * <p>只适合"这一批全是要试的新方案"的场景（比如跑基准）。
+     * 对比场景请用 {@link #runForComparison} + {@link #applyIfBetter}。
+     */
+    List<Attempted> runAndUpdateBest(List<ExperimentPlan> plans,
+                                     List<RetrieverConfig> retrievers) {
+        List<Attempted> results = run(plans, retrievers);
+        for (Attempted attempt : results) {
+            applyIfBetter(attempt);
+        }
+        return results;
+    }
+
+    /**
+     * 这个方案比当前最好更好时，把它设为当前最好。
+     *
+     * <p>多轮探索里"当前最好"是逐步爬上去的，所以只是比较，
+     * 不是无条件替换。
+     */
+    void applyIfBetter(Attempted attempt) {
+        if (best == null || attempt.mrr() > best.mrr()) {
+            best = attempt;
+        }
+    }
+
+    /** 把一个实验记录进笔记本。 */
+    private Attempted record(ExperimentResult result) {
+        Attempted attempt = new Attempted(
+                result.plan().id(),
+                result.plan().displayName(),
+                result.retriever().id(),
+                result.retriever().displayName(),
+                result.score(recallName()),
+                result.score(mrrName()),
+                result.score(ndcgName()));
+        attempted.put(attempt.key(), attempt);
+        return attempt;
+    }
+
+    /** 按 id 去重，保持原有顺序。 */
+    private static List<RetrieverConfig> distinctById(List<RetrieverConfig> retrievers) {
+        Map<String, RetrieverConfig> byId = new LinkedHashMap<>();
+        for (RetrieverConfig config : retrievers) {
+            byId.putIfAbsent(config.id(), config);
+        }
+        return List.copyOf(byId.values());
+    }
+
+    /**
+     * 切分方案也按 id 去重。
+     *
+     * <p>为什么需要：单变量对比要同时传"改之前"和"改之后"。
+     * 如果两者恰好是同一个方案（比如想把某个参数改成它已经是的值），
+     * 传两个同 id 的进去会让报告校验直接拦下——
+     * 那个校验拦得对，报告里两行一样的分不清哪个是哪个。
+     * 但更好的做法是在这里就去掉重复，让调用方看到一句能看懂的话。
+     */
+    private static List<ExperimentPlan> distinctPlansById(List<ExperimentPlan> plans) {
+        Map<String, ExperimentPlan> byId = new LinkedHashMap<>();
+        for (ExperimentPlan plan : plans) {
+            byId.putIfAbsent(plan.id(), plan);
+        }
+        return List.copyOf(byId.values());
     }
 
     /** 已经跑过的方案。 */
