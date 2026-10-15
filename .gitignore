@@ -43,3 +43,6 @@ logs/
 .commitmsg.tmp
 *.tmp
 commitmsg.txt
+
+# UI 调试用的临时截图
+.ui-*.png

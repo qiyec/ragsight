@@ -5,278 +5,476 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ragsight · RAG 诊断</title>
 <style>
-  /* 不引外部字体和 CSS 库：保持"clone 下来只需要 JDK 和 Maven" */
-  :root {
-    --bg: #0f1116;
-    --panel: #171a21;
-    --panel-2: #1e222b;
-    --border: #2a2f3a;
-    --text: #e6e8ec;
-    --muted: #9aa3b2;
-    --accent: #6ea8fe;
-    --good: #3fb950;
-    --warn: #d29922;
-    --bad: #f85149;
-    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; padding: 24px;
-    background: var(--bg); color: var(--text);
-    font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-  }
-  .wrap { max-width: 1180px; margin: 0 auto; }
+/* ---------------------------------------------------------------
+   设计说明
+   - 不引外部字体/CSS 库：保持"clone 下来只要 JDK 和 Maven"
+   - 色板集中成变量，语义色（good/warn/bad）只表达"结论的严重程度"
+     和"数值的好坏"，不用于装饰
+   - 数字一律等宽 + 定宽小数位，方便纵向比较
+   - 热力图不只靠颜色：每列最优会加描边并加粗，颜色深浅只是辅助
+   --------------------------------------------------------------- */
+:root {
+  --bg: #0b0d12;
+  --surface: #12151c;
+  --surface-2: #181c25;
+  --surface-3: #1f2430;
+  --border: #262c38;
+  --border-strong: #333b4a;
+  --text: #e8eaf0;
+  --text-2: #a8b0c0;
+  --text-3: #6f7889;
+  --accent: #5b9dff;
+  --accent-dim: #2a4a7f;
+  --good: #43c463;
+  --warn: #e0a63a;
+  --bad: #ef5f5f;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 10px;
+  --radius-sm: 6px;
+}
 
-  header { margin-bottom: 20px; }
-  h1 { font-size: 20px; margin: 0 0 6px; font-weight: 600; }
-  .sub { color: var(--muted); font-size: 13px; }
-  .sub code { font-family: var(--mono); color: var(--accent); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
-  /* 参数区 */
-  .panel {
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 10px; padding: 16px; margin-bottom: 16px;
-  }
-  .controls {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 12px; align-items: end;
-  }
-  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
-  select, input[type=text] {
-    width: 100%; padding: 7px 9px; border-radius: 6px;
-    border: 1px solid var(--border); background: var(--panel-2);
-    color: var(--text); font: inherit; font-size: 13px;
-  }
-  select:focus, input:focus { outline: 1px solid var(--accent); }
-  .check { display: flex; align-items: center; gap: 7px; padding-bottom: 8px; }
-  .check input { width: 15px; height: 15px; }
-  .check label { margin: 0; color: var(--text); font-size: 13px; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
 
-  button {
-    padding: 8px 18px; border-radius: 6px; border: none;
-    background: var(--accent); color: #0b1220;
-    font: inherit; font-weight: 600; cursor: pointer;
-  }
-  button:disabled { opacity: .5; cursor: default; }
-  button:hover:not(:disabled) { filter: brightness(1.1); }
+/* ---------------- 布局：窄屏上下，宽屏左栏参数 ---------------- */
+.app {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-height: 100vh;
+}
+@media (min-width: 1000px) {
+  .app { grid-template-columns: 300px 1fr; }
+}
 
-  .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
-  .hint.warn { color: var(--warn); }
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 22px 20px;
+}
+@media (min-width: 1000px) {
+  .sidebar { position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+}
 
-  /* 结论 */
-  .findings { display: flex; flex-direction: column; gap: 8px; }
-  .finding {
-    padding: 10px 13px; border-radius: 7px; font-size: 13px;
-    border-left: 3px solid var(--border); background: var(--panel-2);
-  }
-  .finding.good { border-left-color: var(--good); }
-  .finding.warn { border-left-color: var(--warn); }
-  .finding.bad  { border-left-color: var(--bad); }
+.main { padding: 22px 26px 60px; min-width: 0; }
 
-  h2 { font-size: 15px; margin: 0 0 12px; font-weight: 600; }
+/* ---------------- 品牌区 ---------------- */
+.brand { margin-bottom: 24px; }
+.brand h1 {
+  font-size: 16px; font-weight: 650; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: 8px;
+}
+.brand .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); flex: none;
+}
+.brand p {
+  color: var(--text-3); font-size: 12px; margin-top: 5px; line-height: 1.45;
+}
 
-  /* 表格 */
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
-  th { color: var(--muted); font-weight: 500; font-size: 12px; white-space: nowrap; }
-  td.num, th.num { text-align: right; font-family: var(--mono); }
-  tr.baseline td { background: rgba(110,168,254,.07); }
-  .tag {
-    display: inline-block; padding: 1px 6px; border-radius: 4px;
-    font-size: 11px; background: var(--panel-2); color: var(--muted);
-    border: 1px solid var(--border); margin-left: 6px;
-  }
-  .delta-pos { color: var(--good); }
-  .delta-neg { color: var(--bad); }
-  .delta-flat { color: var(--muted); }
+/* ---------------- 表单 ---------------- */
+.field { margin-bottom: 15px; }
+.field > label {
+  display: block; font-size: 11px; font-weight: 600;
+  color: var(--text-3); letter-spacing: .04em;
+  text-transform: uppercase; margin-bottom: 6px;
+}
+select, input[type=text] {
+  width: 100%; padding: 8px 10px;
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font: inherit; font-size: 13px;
+}
+select:hover, input[type=text]:hover { border-color: var(--border-strong); }
+select:focus, input[type=text]:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(91,157,255,.14);
+}
 
-  /* 热力图 */
-  .hm-scroll { overflow-x: auto; }
-  .hm { border-collapse: separate; border-spacing: 3px; font-size: 12px; }
-  .hm th { padding: 5px 8px; color: var(--muted); font-weight: 500; }
-  .hm th.rowhead { text-align: right; white-space: nowrap; color: var(--text); font-size: 12px; }
-  .hm td {
-    padding: 10px 14px; text-align: center; border-radius: 5px;
-    font-family: var(--mono); color: #0b1220; font-weight: 600;
-    border: none; min-width: 74px;
-  }
-  .hm td.empty { background: var(--panel-2); color: var(--muted); font-weight: 400; }
-  .hm-legend { margin-top: 10px; font-size: 12px; color: var(--muted); }
+.switch {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 10px; border-radius: var(--radius-sm);
+  background: var(--surface-2); border: 1px solid var(--border);
+  cursor: pointer; user-select: none;
+}
+.switch:hover { border-color: var(--border-strong); }
+.switch input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+.switch span { font-size: 13px; }
+.switch.disabled { opacity: .45; cursor: not-allowed; }
 
-  /* 柱状图 */
-  .chart { display: flex; flex-direction: column; gap: 7px; }
-  .bar-row { display: grid; grid-template-columns: minmax(180px, 260px) 1fr 52px; gap: 10px; align-items: center; }
-  .bar-label { font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .bar-label.best { color: var(--accent); font-weight: 600; }
-  .bar-track { background: var(--panel-2); border-radius: 4px; height: 18px; overflow: hidden; }
-  .bar-fill { height: 100%; background: linear-gradient(90deg, #2d4a7c, var(--accent)); }
-  .bar-value { font-family: var(--mono); font-size: 12px; text-align: right; color: var(--muted); }
+.btn {
+  width: 100%; padding: 10px; border: none; border-radius: var(--radius-sm);
+  background: var(--accent); color: #06101f;
+  font: inherit; font-size: 13px; font-weight: 650; cursor: pointer;
+  transition: filter .12s, transform .06s;
+}
+.btn:hover:not(:disabled) { filter: brightness(1.12); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: .5; cursor: default; }
 
-  .status { color: var(--muted); font-size: 13px; padding: 10px 0; }
-  .error {
-    background: rgba(248,81,73,.1); border: 1px solid var(--bad);
-    border-radius: 8px; padding: 13px; font-size: 13px;
-    white-space: pre-wrap; color: #ffb4ae;
-  }
-  .meta { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
-  .hidden { display: none; }
+.note {
+  font-size: 11.5px; line-height: 1.55; color: var(--text-3);
+  padding: 9px 10px; border-radius: var(--radius-sm);
+  background: var(--surface-2); border-left: 2px solid var(--border-strong);
+  margin-top: 12px;
+}
+.note.warn { border-left-color: var(--warn); color: var(--text-2); }
+
+/* ---------------- 通用面板 ---------------- */
+.panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); margin-bottom: 16px; overflow: hidden;
+}
+.panel-head {
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+}
+.panel-head h2 { font-size: 13.5px; font-weight: 650; }
+.panel-head .meta { font-size: 12px; color: var(--text-3); margin-left: auto; }
+.panel-body { padding: 18px; }
+.panel-body.tight { padding: 0; }
+
+/* ---------------- 指标卡 ---------------- */
+.cards {
+  display: grid; gap: 12px; margin-bottom: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+}
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 15px 17px;
+  display: flex; flex-direction: column;
+}
+.card .k {
+  font-size: 11px; font-weight: 600; color: var(--text-3);
+  letter-spacing: .04em; text-transform: uppercase;
+}
+.card .v {
+  font-family: var(--mono); font-size: 25px; font-weight: 600;
+  letter-spacing: -.02em; margin: 7px 0 3px; line-height: 1;
+}
+.card .s { font-size: 11.5px; color: var(--text-3); line-height: 1.4; margin-top: auto; }
+.card .s b { color: var(--text-2); font-weight: 600; }
+.card.hl { border-color: var(--accent-dim); background: linear-gradient(180deg, rgba(91,157,255,.07), transparent); }
+
+/* 没有大数字的卡（比如"最优配置"），用文本承担主要信息 */
+.card.text .v-text {
+  font-size: 15px; font-weight: 600; color: var(--text);
+  line-height: 1.35; margin: 8px 0 4px;
+}
+.card.text .v-text em {
+  display: block; font-style: normal; color: var(--text-2);
+  font-size: 12.5px; font-weight: 400; margin-top: 3px;
+}
+
+/* ---------------- 结论 ---------------- */
+.findings { display: flex; flex-direction: column; gap: 9px; }
+.finding {
+  display: grid; grid-template-columns: 17px 1fr; gap: 11px;
+  padding: 12px 14px; border-radius: var(--radius-sm);
+  background: var(--surface-2); border: 1px solid var(--border);
+  font-size: 13px; line-height: 1.6; color: var(--text-2);
+}
+.finding .ic { font-size: 13px; line-height: 1.45; text-align: center; }
+/* 第一条是"基准表现如何"，是理解后面所有结论的前提，抬一级 */
+.finding.lead {
+  color: var(--text); background: var(--surface-3);
+  border-color: var(--border-strong);
+  font-size: 13.5px; padding: 13px 15px;
+}
+.finding.lead .ic { color: var(--text-2); }
+
+/* 语义色只用在图标和左边框上，正文保持可读性 */
+.finding.good { border-left: 2px solid var(--good); }
+.finding.good .ic { color: var(--good); }
+.finding.warn { border-left: 2px solid var(--warn); }
+.finding.warn .ic { color: var(--warn); }
+.finding.bad { border-left: 2px solid var(--bad); }
+.finding.bad .ic { color: var(--bad); }
+.finding.info { border-left: 2px solid var(--border-strong); }
+.finding.info .ic { color: var(--text-3); }
+
+/* ---------------- 热力图 ---------------- */
+.hm-wrap { overflow-x: auto; }
+table.hm { border-collapse: separate; border-spacing: 0; width: 100%; }
+table.hm th {
+  font-size: 11.5px; font-weight: 600; color: var(--text-3);
+  padding: 0 0 9px; text-align: center;
+}
+table.hm th.rowhead {
+  text-align: left; color: var(--text-2); font-weight: 500;
+  padding: 0 14px 0 0; font-size: 12.5px; white-space: nowrap;
+}
+table.hm td {
+  text-align: center; padding: 11px 12px;
+  font-family: var(--mono); font-size: 13px; font-weight: 500;
+  color: #06101f; border-right: 3px solid var(--surface);
+  border-bottom: 3px solid var(--surface);
+  min-width: 86px; transition: filter .12s;
+}
+table.hm td:first-of-type { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+table.hm td:last-of-type { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+table.hm td:hover { filter: brightness(1.08); }
+/* 每列最优：加描边并加粗，不依赖颜色也能看出来 */
+table.hm td.best {
+  outline: 2px solid var(--text); outline-offset: -2px;
+  font-weight: 700;
+}
+table.hm td.empty {
+  background: var(--surface-2); color: var(--text-3); font-weight: 400;
+  outline: none;
+}
+.hm-foot {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  margin-top: 14px; font-size: 11.5px; color: var(--text-3);
+}
+.scale { display: flex; align-items: center; gap: 8px; }
+.scale .bar {
+  width: 132px; height: 8px; border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+/* ---------------- 明细表 ---------------- */
+.tbl-wrap { overflow-x: auto; max-height: 460px; overflow-y: auto; }
+table.data { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.data th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--surface-2); color: var(--text-3);
+  font-size: 11px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; text-align: left;
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+table.data th.num, table.data td.num { text-align: right; font-family: var(--mono); }
+table.data td {
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  color: var(--text-2); white-space: nowrap;
+}
+table.data tbody tr:hover td { background: var(--surface-2); }
+table.data tr.base td { background: rgba(91,157,255,.055); }
+table.data tr.base td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+table.data td.best { color: var(--text); font-weight: 650; }
+table.data td.dim { color: var(--text-3); }
+table.data td.plan { color: var(--text); }
+
+.chip {
+  display: inline-block; margin-left: 7px; padding: 1.5px 6px;
+  border-radius: 4px; font-size: 10px; font-weight: 600;
+  letter-spacing: .02em;
+  background: var(--surface-3); color: var(--text-3);
+  border: 1px solid var(--border-strong); vertical-align: 1px;
+}
+.chip.accent { color: var(--accent); border-color: var(--accent-dim); background: rgba(91,157,255,.1); }
+
+/* ---------------- 状态 ---------------- */
+.blank {
+  color: var(--text-3); font-size: 13px; padding: 40px 20px;
+  text-align: center; line-height: 1.7;
+}
+.error {
+  background: rgba(239,95,95,.08); border: 1px solid rgba(239,95,95,.35);
+  border-radius: var(--radius); padding: 15px 17px;
+  font-size: 12.5px; line-height: 1.65; color: #ffc4c4;
+  white-space: pre-wrap; font-family: var(--mono); margin-bottom: 16px;
+}
+.loading {
+  display: flex; align-items: center; gap: 10px;
+  color: var(--text-2); font-size: 13px; padding: 22px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); margin-bottom: 16px;
+}
+.spinner {
+  width: 14px; height: 14px; border-radius: 50%; flex: none;
+  border: 2px solid var(--border-strong); border-top-color: var(--accent);
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.hidden { display: none !important; }
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="app">
 
-  <header>
-    <h1>ragsight · RAG 诊断</h1>
-    <div class="sub">
-      把检索拆成能单独量的几步，看瓶颈在哪一段。结论由固定规则从指标推导，不经过大模型。
+  <!-- ============ 左侧：参数 ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <h1><span class="dot"></span>ragsight</h1>
+      <p>把 RAG 拆成能单独量的几步，看瓶颈在哪一段。<br>结论由固定规则从指标推导，不经过大模型。</p>
     </div>
-  </header>
 
-  <!-- 参数区 -->
-  <div class="panel">
-    <div class="controls">
-      <div>
-        <label for="corpus">语料</label>
-        <select id="corpus"></select>
-      </div>
-      <div>
-        <label for="chunkSize">切分窗口（字符）</label>
-        <select id="chunkSize"></select>
-      </div>
-      <div>
-        <label for="topK">召回条数 topK</label>
-        <select id="topK"></select>
-      </div>
-      <div class="check">
+    <div class="field">
+      <label for="corpus">语料</label>
+      <select id="corpus"></select>
+    </div>
+
+    <div class="field">
+      <label for="chunkSize">切分窗口</label>
+      <select id="chunkSize"></select>
+    </div>
+
+    <div class="field">
+      <label for="topK">召回条数 topK</label>
+      <select id="topK"></select>
+    </div>
+
+    <div class="field">
+      <label class="switch" for="rerank">
         <input type="checkbox" id="rerank" checked>
-        <label for="rerank">顺便对比重排</label>
-      </div>
-      <div>
-        <button id="run">跑诊断</button>
-      </div>
+        <span>顺便对比重排</span>
+      </label>
     </div>
 
-    <div class="controls" style="margin-top:12px">
-      <div class="check">
+    <div class="field">
+      <label class="switch" for="useReal" id="useRealWrap">
         <input type="checkbox" id="useReal">
-        <label for="useReal">用真实向量模型</label>
-      </div>
-      <div>
-        <label for="model">模型名</label>
-        <input type="text" id="model" value="text-embedding-v4">
-      </div>
+        <span>用真实向量模型</span>
+      </label>
     </div>
 
-    <div class="hint" id="embeddingHint"></div>
-  </div>
-
-  <div id="error" class="error hidden"></div>
-
-  <div id="loading" class="status hidden">正在跑诊断……</div>
-
-  <!-- 结果区 -->
-  <div id="results" class="hidden">
-
-    <div class="panel">
-      <h2>诊断结论</h2>
-      <div class="meta" id="resultMeta"></div>
-      <div class="findings" id="findings"></div>
+    <div class="field" id="modelField" style="display:none">
+      <label for="model">模型名</label>
+      <input type="text" id="model" value="text-embedding-v4">
     </div>
 
-    <div class="panel">
-      <h2>实验矩阵 <span class="tag" id="hmMetric"></span></h2>
-      <div class="hm-scroll">
-        <table class="hm" id="heatmap"></table>
-      </div>
-      <div class="hm-legend" id="hmLegend"></div>
+    <button class="btn" id="run">跑诊断</button>
+
+    <div class="note" id="embeddingHint"></div>
+  </aside>
+
+  <!-- ============ 右侧：结果 ============ -->
+  <main class="main">
+    <div id="error" class="error hidden"></div>
+
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <span id="loadingText">正在跑诊断……</span>
     </div>
 
-    <div class="panel">
-      <h2>排序质量对比（按 MRR 从高到低）</h2>
-      <div class="chart" id="chart"></div>
+    <div id="blank" class="panel">
+      <div class="blank">正在读取可选项……</div>
     </div>
 
-    <div class="panel">
-      <h2>指标明细</h2>
-      <div class="hm-scroll">
-        <table id="table"></table>
-      </div>
-    </div>
+    <div id="results" class="hidden">
 
-  </div>
+      <!-- 关键指标 -->
+      <div class="cards" id="cards"></div>
+
+      <!-- 结论 -->
+      <section class="panel">
+        <div class="panel-head">
+          <h2>诊断结论</h2>
+          <span class="meta" id="resultMeta"></span>
+        </div>
+        <div class="panel-body">
+          <div class="findings" id="findings"></div>
+        </div>
+      </section>
+
+      <!-- 热力图 -->
+      <section class="panel">
+        <div class="panel-head">
+          <h2>实验矩阵</h2>
+          <span class="meta" id="hmMetric"></span>
+        </div>
+        <div class="panel-body">
+          <div class="hm-wrap"><table class="hm" id="heatmap"></table></div>
+          <div class="hm-foot" id="hmFoot"></div>
+        </div>
+      </section>
+
+      <!-- 明细 -->
+      <section class="panel">
+        <div class="panel-head">
+          <h2>指标明细</h2>
+          <span class="meta">每列最优值已加粗</span>
+        </div>
+        <div class="panel-body tight">
+          <div class="tbl-wrap"><table class="data" id="table"></table></div>
+        </div>
+      </section>
+
+    </div>
+  </main>
 </div>
 
 <script>
 // 极简前端：不引框架、不引图表库、不打包。
-// 页面只有一个，逻辑就是"拿数据 → 填 DOM"，用不着那些东西。
+// 逻辑就是"拿数据 → 填 DOM"，这个规模用不着那些东西。
 
 const $ = id => document.getElementById(id);
 let options = null;
+const ICONS = { GOOD: '✔', WARN: '!', BAD: '×', INFO: '·' };
+
+// ---------------------------------------------------------------
+// 打开方式检查
+//
+// 最常见的坑：直接双击打开这个 HTML（地址栏是 file:///...）。
+// 那样页面里的 api/options 会去找本地文件，必然失败，
+// 而报错只有一句"连不上服务"，看不出原因。先拦一下。
+// ---------------------------------------------------------------
+if (location.protocol === 'file:') {
+  showError(
+    '这个页面要通过服务访问，不能直接双击打开文件。\n\n' +
+    '当前地址：' + location.href + '\n' +
+    '这是本地文件路径，不是服务地址，所以请求接口必然失败。\n\n' +
+    '正确做法：\n' +
+    '  1. 在仓库根目录启动服务：\n' +
+    '       java -jar ragsight-cli/target/ragsight-web.jar\n' +
+    '  2. 等它打印出 Started RagsightWebApplication 之后，\n' +
+    '     在浏览器地址栏输入： http://localhost:8080\n\n' +
+    '注意是"在地址栏输入地址"，不是"打开文件"。'
+  );
+  document.getElementById('blank').classList.add('hidden');
+}
 
 // ---------------------------------------------------------------
 // 初始化
 // ---------------------------------------------------------------
-
-// 最常见的坑：直接双击打开这个 HTML 文件（地址栏是 file:///...）。
-// 那样页面里的 api/options 会去找本地文件，必然失败，
-// 而报错只是一句"连不上服务"，很难看出原因。所以先拦一下，把话说清。
-if (location.protocol === 'file:') {
-  showError(
-    '这个页面要通过服务访问，不能直接双击打开文件。\n\n' +
-    '你现在的地址是：' + location.href + '\n' +
-    '这是本地文件路径，不是服务地址，所以页面里请求接口会失败。\n\n' +
-    '正确做法：\n' +
-    '  1. 先在仓库根目录启动服务：\n' +
-    '       java -jar ragsight-web/target/ragsight-web.jar\n' +
-    '     （或者开发时用：mvnw -pl ragsight-web spring-boot:run）\n' +
-    '  2. 等它打印出 "Started RagsightWebApplication" 之后，\n' +
-    '     在浏览器地址栏输入：http://localhost:8080\n\n' +
-    '注意是输入地址，不是打开文件。'
-  );
-}
-
 async function loadOptions() {
-  if (location.protocol === 'file:') return;   // 上面已经提示过了
+  if (location.protocol === 'file:') return;
 
   try {
     const resp = await fetch('api/options');
-    if (!resp.ok) {
-      throw new Error('HTTP ' + resp.status);
-    }
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
     options = await resp.json();
   } catch (e) {
-    // 报错要把实际请求的地址带上，否则用户不知道怎么排查
     const requested = new URL('api/options', location.href).href;
     showError(
       '连不上服务。\n\n' +
-      '当前页面地址：' + location.href + '\n' +
-      '请求的接口：' + requested + '\n' +
+      '当前页面：' + location.href + '\n' +
+      '请求接口：' + requested + '\n' +
       '失败原因：' + e + '\n\n' +
       '检查一下：\n' +
-      '  1. 服务是不是还在运行？命令行窗口关掉服务就停了。\n' +
-      '  2. 页面地址是不是 http://localhost:8080？\n' +
-      '  3. 如果改过端口，页面也要用对应的端口访问。'
+      '  1. 服务是不是还在运行？（命令行窗口关掉，服务就停了）\n' +
+      '  2. 页面地址是不是 http://localhost:8080 ？\n' +
+      '  3. 改过端口的话，页面也要用对应端口访问。'
     );
+    document.getElementById('blank').classList.add('hidden');
     return;
   }
 
   fillSelect($('corpus'), options.corpora.map(c => ({
-    value: c.id,
-    label: c.name,
-    title: c.description
+    value: c.id, label: c.name, title: c.description
   })), options.defaultCorpusId);
-
   fillSelect($('chunkSize'), options.chunkSizes.map(v => ({ value: v, label: v + ' 字' })), 90);
-  fillSelect($('topK'), options.topKs.map(v => ({ value: v, label: v })), 5);
+  fillSelect($('topK'), options.topKs.map(v => ({ value: v, label: v + ' 条' })), 5);
 
-  // 语料说明跟着选择变，让人知道选的是哪批文档
   $('corpus').addEventListener('change', updateCorpusHint);
   updateCorpusHint();
 
-  // 环境里没有 Key 时把开关禁掉，免得点了报错还不知道为什么
-  $('useReal').disabled = !options.realEmbeddingConfigured;
+  // 环境里没有 Key 就把开关禁掉，免得点了报错还不知道为什么
+  const real = options.realEmbeddingConfigured;
+  $('useReal').disabled = !real;
+  if (!real) $('useRealWrap').classList.add('disabled');
+  $('useReal').addEventListener('change', () => {
+    $('modelField').style.display = $('useReal').checked ? '' : 'none';
+  });
   $('embeddingHint').textContent = options.embeddingHint;
-  $('embeddingHint').className = options.realEmbeddingConfigured ? 'hint' : 'hint warn';
+  $('embeddingHint').className = 'note' + (real ? '' : ' warn');
 
   runDiagnosis();
 }
@@ -294,8 +492,8 @@ function fillSelect(el, items, defaultValue) {
 }
 
 function updateCorpusHint() {
-  const selected = options.corpora.find(c => c.id === $('corpus').value);
-  if (selected) $('corpus').title = selected.description;
+  const sel = options.corpora.find(c => c.id === $('corpus').value);
+  if (sel) $('corpus').title = sel.description;
 }
 
 // ---------------------------------------------------------------
@@ -307,7 +505,11 @@ async function runDiagnosis() {
   $('run').disabled = true;
   $('error').classList.add('hidden');
   $('results').classList.add('hidden');
+  $('blank').classList.add('hidden');
   $('loading').classList.remove('hidden');
+
+  const plans = 2 + ($('rerank').checked ? 1 : 0);
+  $('loadingText').textContent = `正在跑 ${plans} 种切分 × 3 种召回 = ${plans * 3} 次实验……`;
 
   const body = {
     corpusId: $('corpus').value,
@@ -325,11 +527,7 @@ async function runDiagnosis() {
       body: JSON.stringify(body)
     });
     const data = await resp.json();
-
-    if (!resp.ok) {
-      showError(data.message || '诊断失败');
-      return;
-    }
+    if (!resp.ok) { showError(data.message || '诊断失败'); return; }
     render(data);
   } catch (e) {
     showError('请求失败：' + e);
@@ -344,6 +542,7 @@ function showError(msg) {
   el.textContent = msg;
   el.classList.remove('hidden');
   $('loading').classList.add('hidden');
+  $('blank').classList.add('hidden');
   $('run').disabled = false;
 }
 
@@ -354,31 +553,119 @@ function render(d) {
   $('results').classList.remove('hidden');
 
   $('resultMeta').textContent =
-    `${d.corpusName} · ${d.caseCount} 个用例（负样本 ${d.negativeCaseCount} 个）· ` +
-    `${d.experimentCount} 次实验 · 耗时 ${d.elapsedMillis} ms · 基准：${d.baselineName}`;
+    `${d.caseCount} 个用例（负样本 ${d.negativeCaseCount}） · ${d.experimentCount} 次实验 · ${d.elapsedMillis} ms`;
 
+  renderCards(d);
   renderFindings(d.findings);
   renderHeatmap(d.heatmap);
-  renderChart(d.chart);
   renderTable(d);
 }
 
-function renderFindings(findings) {
-  const box = $('findings');
+/**
+ * 顶部指标卡。
+ *
+ * 第一张卡是"最优配置"——它没有单个大数字，用的是"方案名 + 召回方式"两行文本。
+ * 所以单独处理，避免出现"标签孤零零挂着、大数字区域空着"的怪异观感。
+ */
+function renderCards(d) {
+  const box = $('cards');
   box.innerHTML = '';
-  for (const f of findings) {
-    const div = document.createElement('div');
-    div.className = 'finding ' + f.level.toLowerCase();
-    div.textContent = f.text;
-    box.appendChild(div);
-  }
+
+  const baseline = d.rows.find(r => r.baseline);
+  const mrrKey = d.metricNames[1];           // 用 MRR 找最优，它最能体现排序质量
+  const best = d.rows.reduce((a, b) =>
+    (b.scores[mrrKey] > a.scores[mrrKey] ? b : a), d.rows[0]);
+  const gain = best.scores[mrrKey] - baseline.scores[mrrKey];
+  const gainText = Math.abs(gain) < 0.005
+    ? '和基准基本持平'
+    : (gain > 0 ? `比基准高 ${gain.toFixed(3)}` : `比基准低 ${Math.abs(gain).toFixed(3)}`);
+
+  // 第一张：最优配置（文本卡）
+  const c1 = document.createElement('div');
+  c1.className = 'card text' + (gain >= 0.05 ? ' hl' : '');
+  c1.title = `共 ${d.experimentCount} 次实验中排序质量最高的一组`;
+  c1.innerHTML =
+    `<div class="k">最优配置</div>` +
+    `<div class="v-text">${esc(best.retrieverLabel)}<em>${esc(best.chunkingLabel)}` +
+    (best.reranked ? '（含重排）' : '') + `</em></div>` +
+    `<div class="s">${esc(gainText)}</div>`;
+  box.appendChild(c1);
+
+  // 第二张：最优的 MRR
+  const verdict = gain >= 0.05 ? '提升明显，值得采用'
+                : (gain > -0.005 ? '差距不大，不必折腾' : '反而不如基准');
+  addCard(box, mrrKey, best.scores[mrrKey].toFixed(3),
+          `基准 ${baseline.scores[mrrKey].toFixed(3)} · ${esc(verdict)}`,
+          gain >= 0.05,
+          `最优配置的 ${mrrKey}，以及它相对基准（${baseline.chunkingLabel} · ${baseline.retrieverLabel}）的差距`);
+
+  // 第三张：召回率
+  const rKey = d.metricNames[0];
+  addCard(box, '召回率 ' + rKey, best.scores[rKey].toFixed(3),
+          '基准 ' + baseline.scores[rKey].toFixed(3),
+          false,
+          '召回率是上限：它低的话，排序再怎么优化也提升不了最终效果');
+
+  // 第四张：用例数
+  addCard(box, '用例数', String(d.caseCount),
+          d.negativeCaseCount === 0
+            ? '⚠ 没有负样本'
+            : `其中负样本 ${d.negativeCaseCount} 个`,
+          false,
+          d.negativeCaseCount === 0
+            ? '测试集里没有「本来就该答不出来」的问题，检索器可能靠「总是返回最相似内容」拿虚高分'
+            : '含负样本，分数不容易虚高');
+}
+
+function addCard(box, key, value, sub, highlight, title) {
+  const el = document.createElement('div');
+  el.className = 'card' + (highlight ? ' hl' : '');
+  if (title) el.title = title;
+  el.innerHTML =
+    `<div class="k">${esc(key)}</div>` +
+    `<div class="v">${esc(value)}</div>` +
+    `<div class="s">${sub}</div>`;
+  box.appendChild(el);
 }
 
 /**
- * 热力图：颜色越深表示值越高。
+ * 结论。
  *
- * 用 HSL 从暗蓝到亮青，比红绿渐变更易读，也不会让色盲用户完全看不出差别
- * （色盲对明度差比对红绿差敏感得多）。
+ * 第一条是"基准表现如何"——它是理解后面所有结论的前提，所以视觉上抬一级。
+ * 其余按语义色区分，但颜色只用在图标和左边框上，正文保持正常对比度。
+ */
+function renderFindings(findings) {
+  const box = $('findings');
+  box.innerHTML = '';
+
+  findings.forEach((f, i) => {
+    const div = document.createElement('div');
+    div.className = 'finding ' + f.level.toLowerCase();
+    if (i === 0) div.classList.add('lead');
+
+    const ic = document.createElement('div');
+    ic.className = 'ic';
+    ic.textContent = ICONS[f.level] || '·';
+
+    const tx = document.createElement('div');
+    tx.textContent = f.text;
+
+    div.append(ic, tx);
+    box.appendChild(div);
+  });
+}
+
+/** 简易转义。数据都来自本地，但仍然不该让文案里的尖括号破坏 DOM。 */
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, ch =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+}
+
+/**
+ * 热力图。
+ *
+ * 关键：**不只靠颜色**。颜色深浅只是辅助，每列最优会额外加描边并加粗，
+ * 这样即使分不清颜色深浅（色觉差异、屏幕差），也能看出哪个最好。
  */
 function renderHeatmap(hm) {
   $('hmMetric').textContent = hm.metricName;
@@ -386,19 +673,32 @@ function renderHeatmap(hm) {
   const table = $('heatmap');
   table.innerHTML = '';
 
-  // 表头
+  const nCols = hm.columnLabels.length;
+
+  // 每列的最优值，用来加描边
+  const colBest = [];
+  for (let c = 0; c < nCols; c++) {
+    let best = -Infinity;
+    for (let r = 0; r < hm.rowLabels.length; r++) {
+      const v = hm.values[r][c];
+      if (!Number.isNaN(v) && v > best) best = v;
+    }
+    colBest.push(best);
+  }
+
   const thead = document.createElement('thead');
-  const headRow = document.createElement('tr');
-  headRow.appendChild(document.createElement('th'));
+  const hr = document.createElement('tr');
+  const corner = document.createElement('th');
+  corner.className = 'rowhead';
+  hr.appendChild(corner);
   for (const col of hm.columnLabels) {
     const th = document.createElement('th');
     th.textContent = col;
-    headRow.appendChild(th);
+    hr.appendChild(th);
   }
-  thead.appendChild(headRow);
+  thead.appendChild(hr);
   table.appendChild(thead);
 
-  // 数据行
   const tbody = document.createElement('tbody');
   const span = Math.max(hm.maxValue - hm.minValue, 1e-9);
 
@@ -410,20 +710,19 @@ function renderHeatmap(hm) {
     th.textContent = hm.rowLabels[r];
     tr.appendChild(th);
 
-    for (let c = 0; c < hm.columnLabels.length; c++) {
+    for (let c = 0; c < nCols; c++) {
       const td = document.createElement('td');
       const v = hm.values[r][c];
 
-      if (v === null || Number.isNaN(v)) {
+      if (Number.isNaN(v)) {
         td.className = 'empty';
         td.textContent = '—';
       } else {
-        const t = (v - hm.minValue) / span;          // 0 到 1
-        // 明度从 82% 降到 42%、色相从 210 转到 185，值越高越亮越青
-        const light = 82 - t * 40;
-        const hue = 210 - t * 25;
-        td.style.background = `hsl(${hue}, 70%, ${light}%)`;
+        const t = (v - hm.minValue) / span;
+        // 明度 84% → 46%，色相 212 → 186：值越高越亮越青
+        td.style.background = `hsl(${212 - t * 26}, 72%, ${84 - t * 38}%)`;
         td.textContent = v.toFixed(3);
+        if (Math.abs(v - colBest[c]) < 1e-9) td.classList.add('best');
         td.title = `${hm.rowLabels[r]} / ${hm.columnLabels[c]}：${v.toFixed(4)}`;
       }
       tr.appendChild(td);
@@ -432,109 +731,105 @@ function renderHeatmap(hm) {
   }
   table.appendChild(tbody);
 
-  $('hmLegend').textContent =
-    `${hm.metricName} 范围 ${hm.minValue.toFixed(3)} ~ ${hm.maxValue.toFixed(3)}，` +
-    `颜色越亮越高。行是切分方案（含是否重排），列是召回方式。`;
+  $('hmFoot').innerHTML = '';
+
+  const scale = document.createElement('div');
+  scale.className = 'scale';
+  const lo = document.createElement('span');
+  lo.textContent = hm.minValue.toFixed(3);
+  const bar = document.createElement('div');
+  bar.className = 'bar';
+  bar.style.background = 'linear-gradient(90deg, hsl(212,72%,84%), hsl(186,72%,46%))';
+  const hi = document.createElement('span');
+  hi.textContent = hm.maxValue.toFixed(3);
+  scale.append(lo, bar, hi);
+
+  const desc = document.createElement('span');
+  desc.textContent = `颜色越亮越高；描边是每列最优。行＝切分方案，列＝召回方式。`;
+
+  $('hmFoot').append(scale, desc);
 }
 
-function renderChart(chart) {
-  const box = $('chart');
-  box.innerHTML = '';
-
-  for (let i = 0; i < chart.labels.length; i++) {
-    const row = document.createElement('div');
-    row.className = 'bar-row';
-
-    const label = document.createElement('div');
-    label.className = 'bar-label' + (chart.labels[i] === chart.bestLabel ? ' best' : '');
-    label.textContent = chart.labels[i];
-    label.title = chart.labels[i];
-
-    const track = document.createElement('div');
-    track.className = 'bar-track';
-    const fill = document.createElement('div');
-    fill.className = 'bar-fill';
-    const v = chart.mrr[i];
-    fill.style.width = Math.max(0, Math.min(1, v)) * 100 + '%';
-    track.appendChild(fill);
-
-    const value = document.createElement('div');
-    value.className = 'bar-value';
-    value.textContent = v.toFixed(3);
-
-    row.append(label, track, value);
-    box.appendChild(row);
-  }
-}
-
+/**
+ * 明细表。
+ *
+ * 每列最优值加粗，基准行高亮，并且加一列"相对基准"——
+ * 用户关心的不是绝对值，是"比现状好多少"。
+ */
 function renderTable(d) {
   const table = $('table');
   table.innerHTML = '';
 
-  const thead = document.createElement('thead');
-  const headRow = document.createElement('tr');
-  for (const h of ['切分方案', '召回方式']) {
-    const th = document.createElement('th');
-    th.textContent = h;
-    headRow.appendChild(th);
-  }
+  const mrrKey = d.metricNames[1];
+
+  // 每列最优
+  const bestByMetric = {};
   for (const m of d.metricNames) {
-    const th = document.createElement('th');
-    th.className = 'num';
-    th.textContent = m;
-    headRow.appendChild(th);
+    bestByMetric[m] = d.rows.reduce((a, b) => (b.scores[m] > a.scores[m] ? b : a), d.rows[0]).scores[m];
   }
-  const thDelta = document.createElement('th');
-  thDelta.className = 'num';
-  thDelta.textContent = '相对基准（' + d.metricNames[1] + '）';
-  headRow.appendChild(thDelta);
-  thead.appendChild(headRow);
+
+  const thead = document.createElement('thead');
+  const hr = document.createElement('tr');
+  for (const [txt, num] of [['切分方案', 0], ['召回方式', 0],
+                            ...d.metricNames.map(m => [m, 1]),
+                            ['相对基准（' + mrrKey + '）', 1]]) {
+    const th = document.createElement('th');
+    th.textContent = txt;
+    if (num) th.className = 'num';
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
   table.appendChild(thead);
 
   const tbody = document.createElement('tbody');
   for (const row of d.rows) {
     const tr = document.createElement('tr');
-    if (row.baseline) tr.className = 'baseline';
+    if (row.baseline) tr.className = 'base';
 
-    const tdChunk = document.createElement('td');
-    tdChunk.textContent = row.chunkingLabel;
+    const tdPlan = document.createElement('td');
+    tdPlan.className = 'plan';
+    tdPlan.textContent = row.chunkingLabel;
     if (row.reranked) {
-      const tag = document.createElement('span');
-      tag.className = 'tag';
-      tag.textContent = '重排';
-      tdChunk.appendChild(tag);
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.textContent = '重排';
+      tdPlan.appendChild(chip);
     }
 
     const tdRet = document.createElement('td');
     tdRet.textContent = row.retrieverLabel;
     if (row.baseline) {
-      const tag = document.createElement('span');
-      tag.className = 'tag';
-      tag.textContent = '基准';
-      tdRet.appendChild(tag);
+      const chip = document.createElement('span');
+      chip.className = 'chip accent';
+      chip.textContent = '基准';
+      tdRet.appendChild(chip);
     }
 
-    tr.append(tdChunk, tdRet);
+    tr.append(tdPlan, tdRet);
 
     for (const m of d.metricNames) {
       const td = document.createElement('td');
       td.className = 'num';
       const v = row.scores[m];
-      td.textContent = (v === null || Number.isNaN(v)) ? '—' : v.toFixed(3);
+      td.textContent = Number.isNaN(v) ? '—' : v.toFixed(3);
+      if (Math.abs(v - bestByMetric[m]) < 1e-9) td.classList.add('best');
       tr.appendChild(td);
     }
 
-    // 差值单独一列：正数绿、负数红、接近 0 灰
     const tdDelta = document.createElement('td');
     tdDelta.className = 'num';
-    const dm = row.deltas[d.metricNames[1]];
+    const dm = row.deltas[mrrKey];
     if (dm === undefined || dm === null || Number.isNaN(dm)) {
       tdDelta.textContent = '—';
-      tdDelta.className += ' delta-flat';
+      tdDelta.classList.add('dim');
+    } else if (Math.abs(dm) < 0.005) {
+      tdDelta.textContent = '±0.000';
+      tdDelta.classList.add('dim');
     } else {
-      tdDelta.textContent = (dm >= 0 ? '+' : '') + dm.toFixed(3);
-      tdDelta.className += ' ' + (Math.abs(dm) < 0.005 ? 'delta-flat'
-                                : (dm > 0 ? 'delta-pos' : 'delta-neg'));
+      tdDelta.textContent = (dm > 0 ? '+' : '') + dm.toFixed(3);
+      // 用语义色 + 符号双重表达，不只靠颜色
+      tdDelta.style.color = dm > 0 ? 'var(--good)' : 'var(--bad)';
+      tdDelta.style.fontWeight = '600';
     }
     tr.appendChild(tdDelta);
 
