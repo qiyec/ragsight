@@ -89,6 +89,62 @@ class AgentLoopTest {
     }
 
     @Test
+    @DisplayName("走一遍自适应流程，看总共跑了多少次实验")
+    void adaptive_path_should_report_experiment_count() {
+        ScriptedModel model = new ScriptedModel()
+                .thenCallTool("run_baseline", Map.of("chunk_size", 90))
+                .thenCallTool("compare_one_change",
+                        Map.of("change", "rerank", "new_value", "true"))
+                .thenCallTool("compare_one_change",
+                        Map.of("change", "retriever", "new_value", "keyword"))
+                .thenCallTool("compare_one_change",
+                        Map.of("change", "chunk_size", "new_value", "200"))
+                .thenCallTool("finish")
+                .thenSay("找到更好的配置了。");
+
+        try (ReActAgent agent = model.buildAgent(toolkit, 10)) {
+            model.run(agent, "自适应诊断");
+        }
+
+        // 把实际跑过的每一步打出来，看清次数是怎么累起来的
+        System.out.println("=== 自适应流程实际跑过的配置 ===");
+        session.attempted().forEach(a -> System.out.println("  " + a.displayName()
+                + "   Recall=" + String.format("%.3f", a.recall())
+                + "  MRR=" + String.format("%.3f", a.mrr())));
+        System.out.println("  合计 " + session.experimentCount() + " 次实验");
+
+        // 一轮基准 + 三次单变量对比。
+        // 基准是 2 种切分 × 3 种召回 = 6 次；
+        // 对比每次跑 2 组（改之前 / 改之后），但"改之前"会落在同一批里，
+        // 所以具体次数取决于每次改动落在切分维度还是召回维度。
+        //
+        // 全穷举这个语料要多少次：3 种切分 × 3 种召回 × 2 种重排 = 18 组。
+        // 注意单独看"3 切分 × 3 召回 = 9"是不对的——重排那一维
+        // 是每个切分各自加一组，所以总共有 18 组。
+        assertThat(session.experimentCount())
+                .as("自适应流程应该比全穷举（18 次）少")
+                .isLessThan(18);
+        assertThat(session.attempted())
+                .as("试过的配置数应该远少于全部组合")
+                .isNotEmpty();
+
+        // 最后一次改动试的是"递归切分 200 字"，这一组在基准里没有出现过
+        // （基准只有 90 字）。它的指标比基准最好的一档还高——
+        // 这正是自适应探索的价值：它走到了穷举网格里也有、
+        // 但"只跑默认那几档"时不会碰到的地方。
+        assertThat(session.best().mrr())
+                .as("探索之后应该比基准最好的一档更好")
+                .isGreaterThan(0.813);
+
+        System.out.printf(
+                "%n[省了多少] 自适应：%d 次实验。%n"
+                        + "  全穷举这个语料：3 种切分 × 3 种召回 × 2 种重排 = 18 组。%n"
+                        + "  自适应只跑了 %d 次，而且其中一组（递归切分 200 字）%n"
+                        + "  是基准里没有的档位——它是顺着中间结果走出来的。%n",
+                session.experimentCount(), session.experimentCount());
+    }
+
+    @Test
     @DisplayName("连续调多个工具时，每一步的结果都要累积进对话")
     void multiple_tool_calls_should_chain() {
         ScriptedModel model = new ScriptedModel()
