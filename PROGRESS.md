@@ -6,7 +6,7 @@
 - **最后更新**：2026-10-14
 - **当前阶段**：P5 第二层已完成（诊断 Agent 会自己决定试什么）；下一步：用真实 Key 实测 Agent
 - **远程仓库**：https://github.com/qiyec/ragsight （public，CI 全绿）
-- **规模**：228 个测试
+- **规模**：261 个测试
 
 ---
 
@@ -173,6 +173,8 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose
 | 进度上报（AgentScope Hook） | ✅ |
 | 架构规则（不依赖 agent / 不依赖 agentscope 等 7 条） | ✅ 已验证会拦人 |
 | 命令行入口 `diagnose` | ✅ `--list` 和缺 Key 提示已实测 |
+| 工具逻辑测试（不调大模型） | ✅ **33 个**，抓出 3 个真 bug |
+| 网页上的 Agent 入口（SSE 实时推送） | ✅ 接口实测，缺 Key 时正确报错 |
 | **真实调用大模型跑通** | ❌ **未验证**，需要 `DASHSCOPE_API_KEY` |
 
 ### 下一步要做的第一件事
@@ -205,3 +207,29 @@ set DASHSCOPE_API_KEY=你的key
 
    注意这个规则**报错了而不是静默通过**——因为架构测试设了
    `failOnEmptyShould(true)`。这条设置救了一次。
+---
+
+## 决策过程怎么在网页上看
+
+`http://localhost:8080` 左侧底部有"让 Agent 自己找瓶颈"。
+点下去后上方会出现实时日志：Agent 的每一步、调了哪个工具、工具返回什么，
+一路推下来。最后给结论卡。
+
+**为什么用 SSE**：这是单向的（服务端推、客户端听），
+SSE 就是为这个场景设计的，Spring MVC 直接有 `SseEmitter`。
+WebSocket 是双向的，这里用不上。
+
+**前端用 fetch 读流而不是 EventSource**：EventSource 只支持 GET，
+而这里要 POST 传参数。
+
+### 为什么这块单独搞个线程池
+
+Agent 跑一次是几十秒级的阻塞调用，不能占着 Tomcat 的请求线程。
+线程池固定 2 个，刻意小——每个 Agent 都在真花钱调模型，
+排队比并发合适。
+
+### 一个容易漏的地方
+
+`SseEmitter` 必须注册 `onCompletion` / `onTimeout`。
+不注册的话浏览器关掉页面后，后台还在闷头跑，
+**在真花钱和真的跑实验**。这不是"可选的好习惯"。
