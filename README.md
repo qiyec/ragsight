@@ -232,8 +232,21 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose \
 |---|---|
 | [AGENTS.md](AGENTS.md) | 项目定位、要守的规矩、编码习惯 |
 | [PROGRESS.md](PROGRESS.md) | 进度、下一步、踩过的坑 |
+| [docs/design/](docs/design/) | **架构说明**：分层、模块、设计模式、二次开发指南 |
 | [docs/adr/](docs/adr/) | 每个重要决定的原因，以及被否掉的方案 |
 | [docs/setup/environment.md](docs/setup/environment.md) | 环境要求和常见问题 |
+
+### 架构说明（想读代码或改代码，看这套）
+
+| 文档 | 内容 |
+|---|---|
+| [00-一次诊断的完整流程](docs/design/00-一次诊断的完整流程.md) | 从敲命令到出报告，中间经过了什么 |
+| [01-分层与依赖方向](docs/design/01-分层与依赖方向.md) | 五个模块的职责，为什么依赖只能单向 |
+| [02-核心的三个模块](docs/design/02-核心的三个模块.md) | 领域模型为什么拆成三块 |
+| [03-设计模式清单](docs/design/03-设计模式清单.md) | 用了哪些模式、解决什么问题、不用会怎样 |
+| [04-二次开发指南](docs/design/04-二次开发指南.md) | 加功能时改哪里、按什么顺序、容易漏什么 |
+| [05-代码地图](docs/design/05-代码地图.md) | 按"我想干什么"查文件 |
+| [06-术语表](docs/design/06-术语表.md) | RAG 和本项目的词，用大白话解释 |
 
 ### 重要决定
 
