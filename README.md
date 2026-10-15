@@ -118,16 +118,36 @@ mvnw.cmd verify
 
 这条是硬要求：任何人 clone 下来，不读文档、不配环境就能跑通。所以真实模型、向量数据库这些全都是可选的，不装也不影响默认流程。
 
-### 看它长什么样（内置演示文档）
+### 方式一：浏览器里用（推荐，能看热力图）
 
 ```bash
-mvnw.cmd -pl ragsight-cli -am package
-java -jar ragsight-cli/target/ragsight-cli.jar diagnose
+# 打包一次（会一起产出命令行和网页两个可执行 jar）
+mvnw.cmd clean package -DskipTests
+
+# 启动服务
+java -jar ragsight-cli/target/ragsight-web.jar
 ```
 
-### 诊断你自己的文档
+等它打印出 `Started RagsightWebApplication` 之后，**在浏览器地址栏输入**：
+
+```
+http://localhost:8080
+```
+
+> ⚠️ **注意是"在地址栏输入这个地址"，不是打开 `index.html` 文件。**
+> 直接双击 HTML 文件的话地址是 `file:///...`，页面请求不到后端接口。
+> 真这么开了页面也会提示你怎么做。
+
+页面上可以调语料、切分窗口、召回条数，勾选要不要对比重排，点"跑诊断"。
+结果会画成热力图——哪个组合好、切分有多大影响，一眼能看出来。
+
+### 方式二：命令行（适合脚本化和进 CI）
 
 ```bash
+# 用内置演示文档，不用准备任何数据
+java -jar ragsight-cli/target/ragsight-cli.jar diagnose
+
+# 诊断自己的文档
 java -jar ragsight-cli/target/ragsight-cli.jar diagnose \
      --corpus examples/corpus \
      --eval examples/eval.txt

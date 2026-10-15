@@ -216,12 +216,47 @@ let options = null;
 // ---------------------------------------------------------------
 // 初始化
 // ---------------------------------------------------------------
+
+// 最常见的坑：直接双击打开这个 HTML 文件（地址栏是 file:///...）。
+// 那样页面里的 api/options 会去找本地文件，必然失败，
+// 而报错只是一句"连不上服务"，很难看出原因。所以先拦一下，把话说清。
+if (location.protocol === 'file:') {
+  showError(
+    '这个页面要通过服务访问，不能直接双击打开文件。\n\n' +
+    '你现在的地址是：' + location.href + '\n' +
+    '这是本地文件路径，不是服务地址，所以页面里请求接口会失败。\n\n' +
+    '正确做法：\n' +
+    '  1. 先在仓库根目录启动服务：\n' +
+    '       java -jar ragsight-web/target/ragsight-web.jar\n' +
+    '     （或者开发时用：mvnw -pl ragsight-web spring-boot:run）\n' +
+    '  2. 等它打印出 "Started RagsightWebApplication" 之后，\n' +
+    '     在浏览器地址栏输入：http://localhost:8080\n\n' +
+    '注意是输入地址，不是打开文件。'
+  );
+}
+
 async function loadOptions() {
+  if (location.protocol === 'file:') return;   // 上面已经提示过了
+
   try {
     const resp = await fetch('api/options');
+    if (!resp.ok) {
+      throw new Error('HTTP ' + resp.status);
+    }
     options = await resp.json();
   } catch (e) {
-    showError('连不上服务。请确认服务已启动。\n' + e);
+    // 报错要把实际请求的地址带上，否则用户不知道怎么排查
+    const requested = new URL('api/options', location.href).href;
+    showError(
+      '连不上服务。\n\n' +
+      '当前页面地址：' + location.href + '\n' +
+      '请求的接口：' + requested + '\n' +
+      '失败原因：' + e + '\n\n' +
+      '检查一下：\n' +
+      '  1. 服务是不是还在运行？命令行窗口关掉服务就停了。\n' +
+      '  2. 页面地址是不是 http://localhost:8080？\n' +
+      '  3. 如果改过端口，页面也要用对应的端口访问。'
+    );
     return;
   }
 
