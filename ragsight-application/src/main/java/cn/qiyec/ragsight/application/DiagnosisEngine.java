@@ -14,10 +14,11 @@ import cn.qiyec.ragsight.domain.retrieval.ScoredChunk;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -141,7 +142,7 @@ public final class DiagnosisEngine {
                                            RetrieverConfig retrieverConfig,
                                            RetrieverFactory factory,
                                            EvaluationSet evalSet) {
-        Retriever retriever = factory.create(retrieverConfig, plan.topK());
+        Retriever retriever = factory.create(retrieverConfig, plan.topK(), plan.rerank());
         int topK = plan.topK();
 
         List<CaseOutcome> outcomes = new ArrayList<>(evalSet.size());
@@ -217,13 +218,130 @@ public final class DiagnosisEngine {
                     mrrName, baseline.score(mrrName)));
         }
 
-        // 规则三：切分到底有没有影响
-        deriveChunkingFindings(request, results, recallName, findings);
+        // 规则三：能给结论的就给，给不了的说明为什么
+        //
+        // 这两件事是可以分别回答的：
+        //   - 重排有没有用：拿"同一个切分、一加一不加"的配对方案比
+        //   - 切分有没有用：拿"都不加重排"的方案之间比
+        // 所以即使一次跑了很多组合，也不必含糊地说"没法归因"。
+        boolean hasRerankPair = hasRerankPair(request.chunkings());
+        if (hasRerankPair) {
+            deriveRerankFindings(request, results, recallName, mrrName, findings);
+        }
+        if (hasChunkingComparison(request.chunkings())) {
+            deriveChunkingFindings(request, results, recallName, findings);
+        }
+        if (!hasRerankPair && !hasChunkingComparison(request.chunkings())) {
+            findings.add("这批实验里切分和重排都不一样，指标差异没法归因到具体哪一项。"
+                    + "想单独看某项的影响，请让其他条件保持一致。");
+        }
 
         // 规则四：换召回方式有没有收益
         deriveRetrieverFindings(results, baseline, recallName, mrrName, findings);
 
         return List.copyOf(findings);
+    }
+
+    /** 有没有"同一刀切分、一加一不加"的配对方案。有才谈得上验证重排。 */
+    private static boolean hasRerankPair(List<ExperimentPlan> plans) {
+        for (ExperimentPlan withRerank : plans) {
+            if (!withRerank.rerank()) {
+                continue;
+            }
+            String strategyId = idOf(withRerank.strategy());
+            for (ExperimentPlan without : plans) {
+                if (!without.rerank() && idOf(without.strategy()).equals(strategyId)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** 有没有两种以上"都不加重排"的不同切分。有才谈得上比较切分。 */
+    private static boolean hasChunkingComparison(List<ExperimentPlan> plans) {
+        Set<String> distinctStrategies = new HashSet<>();
+        for (ExperimentPlan plan : plans) {
+            if (!plan.rerank()) {
+                distinctStrategies.add(idOf(plan.strategy()));
+            }
+        }
+        return distinctStrategies.size() >= 2;
+    }
+
+    /** 用一个稳定可比的标识代表切分策略，用来判断"是不是同一种切分"。 */
+    private static String idOf(cn.qiyec.ragsight.domain.knowledge.chunking.ChunkingStrategy strategy) {
+        return strategy.getClass().getName() + "|" + strategy.describe();
+    }
+
+    /**
+     * 判断加不加重排到底有没有用。
+     *
+     * <p>这是报告给出"该试重排"建议之后，用户真正要验证的那一步。
+     * 比对时只比"同一个切分下、同一种召回，加与不加的区别"。
+     */
+    private void deriveRerankFindings(DiagnosisRequest request,
+                                      Map<ExperimentId, ExperimentResult> results,
+                                      String recallName,
+                                      String mrrName,
+                                      List<String> findings) {
+        List<ExperimentPlan> plans = request.chunkings();
+        if (plans.size() < 2) {
+            return;
+        }
+
+        // 第一个方案当"不加重排"的对照（调用方应该把现状放第一位）
+        ExperimentPlan without = plans.get(0);
+        if (without.rerank()) {
+            findings.add("提示：第一个方案已经带重排了，没法和不带重排的做对照。"
+                    + "把不带重排的方案放第一位才能比出来。");
+            return;
+        }
+
+        for (int i = 1; i < plans.size(); i++) {
+            ExperimentPlan with = plans.get(i);
+            if (!with.rerank()) {
+                continue;
+            }
+            for (RetrieverConfig retriever : request.retrievers()) {
+                ExperimentResult before = results.get(new ExperimentId(without.id(), retriever.id()));
+                ExperimentResult after = results.get(new ExperimentId(with.id(), retriever.id()));
+                if (before == null || after == null) {
+                    continue;
+                }
+
+                double mrrGain = after.score(mrrName) - before.score(mrrName);
+                double recallGain = after.score(recallName) - before.score(recallName);
+
+                if (mrrGain >= NOTABLE_DELTA) {
+                    findings.add(String.format(
+                            "✅ 重排确实有用：在「%s」下加上重排，%s 从 %.3f 提到 %.3f（+%.3f）。",
+                            retriever.displayName(), mrrName,
+                            before.score(mrrName), after.score(mrrName), mrrGain));
+                } else if (mrrGain > -NOTABLE_DELTA) {
+                    findings.add(String.format(
+                            "重排在这个语料上几乎没效果（%s 只变了 %+.3f）——"
+                                    + "不值得为它增加延迟和一次模型调用。",
+                            mrrName, mrrGain));
+                } else {
+                    findings.add(String.format(
+                            "⚠ 加重排反而变差了（%s 下降了 %.3f）。"
+                                    + "常见原因是召回本身就不够——候选里没有正确答案，"
+                                    + "重排只能把错的排得更整齐。先解决召回问题。",
+                            mrrName, -mrrGain));
+                }
+
+                // 重排理论上不该改变召回率，变了说明有问题
+                if (Math.abs(recallGain) >= NOTABLE_DELTA) {
+                    findings.add(String.format(
+                            "⚠ 异常：加重排后召回率也变了 %+.3f。"
+                                    + "重排只在已有候选里重排，理论上不该改变召回率，"
+                                    + "这个现象值得查一下。",
+                            recallGain));
+                }
+                return; // 只报第一组对照，免得结论堆砌
+            }
+        }
     }
 
     /**
@@ -240,35 +358,48 @@ public final class DiagnosisEngine {
             return;
         }
 
-        // 只在第一个召回方式下比不同切分：这样才是干净的对比，
-        // 否则分不清指标变化是切分造成的还是召回方式造成的
-        RetrieverConfig fixedRetriever = request.retrievers().get(0);
-        List<ExperimentResult> group = request.chunkings().stream()
-                .map(plan -> results.get(new ExperimentId(plan.id(), fixedRetriever.id())))
-                .filter(Objects::nonNull)
-                .toList();
-        if (group.size() < 2) {
-            return;
+        // 只比"不加重排"的那些方案。这样组内差异只可能来自切分，
+        // 不会把"重排带来的提升"误算成"切分的影响"。
+        Map<String, ExperimentResult> bestPerStrategy = new LinkedHashMap<>();
+
+        for (ExperimentPlan plan : request.chunkings()) {
+            if (plan.rerank()) {
+                continue;
+            }
+            String strategyId = idOf(plan.strategy());
+            for (RetrieverConfig retriever : request.retrievers()) {
+                ExperimentResult result = results.get(new ExperimentId(plan.id(), retriever.id()));
+                if (result == null) {
+                    continue;
+                }
+                bestPerStrategy.merge(strategyId, result,
+                        (a, b) -> a.score(recallName) >= b.score(recallName) ? a : b);
+            }
         }
 
-        double min = group.stream().mapToDouble(r -> r.score(recallName)).min().orElse(0);
-        double max = group.stream().mapToDouble(r -> r.score(recallName)).max().orElse(0);
+        if (bestPerStrategy.size() < 2) {
+            return; // 只有一种切分，无从比较
+        }
+
+        double min = bestPerStrategy.values().stream()
+                .mapToDouble(r -> r.score(recallName)).min().orElse(0);
+        double max = bestPerStrategy.values().stream()
+                .mapToDouble(r -> r.score(recallName)).max().orElse(0);
         double spread = max - min;
 
         if (spread < NOTABLE_DELTA) {
             findings.add(String.format(
-                    "换切分方式对结果几乎没影响（在「%s」下，各切分方案的 %s 差异只有 %.3f）"
+                    "换切分方式对结果几乎没影响（各切分方案的 %s 差异只有 %.3f）"
                             + "——不用在切分粒度上继续花时间。",
-                    fixedRetriever.displayName(), recallName, spread));
+                    recallName, spread));
         } else {
-            ExperimentResult best = group.stream()
+            ExperimentResult best = bestPerStrategy.values().stream()
                     .max(Comparator.comparingDouble(r -> r.score(recallName)))
                     .orElseThrow();
             findings.add(String.format(
-                    "切分确实有影响：在「%s」下，「%s」的 %s 最高（%.3f），"
-                            + "比其他切分方案至少高 %.3f。",
-                    fixedRetriever.displayName(), best.plan().displayName(),
-                    recallName, best.score(recallName), spread));
+                    "切分确实有影响：「%s」的 %s 最高（%.3f），比其他切分方案至少高 %.3f。",
+                    best.plan().displayName(), recallName,
+                    best.score(recallName), spread));
             findings.add("⚠ 但别急着下结论：片段切得越大，一个片段里装的内容越多，"
                     + "命中率天然就越高——这不一定说明检索变好了。"
                     + "还要看喂给模型的上下文里有多少是无关内容（片段越大越多），"

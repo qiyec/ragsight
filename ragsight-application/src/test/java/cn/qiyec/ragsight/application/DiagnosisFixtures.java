@@ -126,6 +126,21 @@ final class DiagnosisFixtures {
     }
 
     static ExperimentPlan plan(String id, int topK, List<Chunk> presetChunks) {
+        return plan(id, topK, presetChunks, 0);
+    }
+
+    /**
+     * 造一个"序号整体偏移"的切分变体。
+     *
+     * <p>用来在测试里模拟"两种不同的切分方式"。片段内容和标记都不变，
+     * 只是序号不同——这样"是不是同一种切分"能区分开，
+     * 而用例的期望片段仍然找得到（正文里带着标记）。
+     */
+    static ExperimentPlan variantPlan(String id, List<Chunk> presetChunks, int ordinalOffset) {
+        return plan(id, TOP_K, presetChunks, ordinalOffset);
+    }
+
+    static ExperimentPlan plan(String id, int topK, List<Chunk> presetChunks, int ordinalOffset) {
         // 写成匿名类：ChunkingStrategy 除 chunk() 还有 name() 和 describe()，
         // 不是函数式接口，不能用 lambda
         ChunkingStrategy preset = new ChunkingStrategy() {
@@ -136,12 +151,22 @@ final class DiagnosisFixtures {
 
             @Override
             public String describe() {
-                return "预置片段";
+                return "预置片段(偏移 " + ordinalOffset + ")";
             }
 
             @Override
             public List<Chunk> chunk(Document document) {
-                return presetChunks;
+                if (ordinalOffset == 0) {
+                    return presetChunks;
+                }
+                List<Chunk> shifted = new ArrayList<>();
+                for (Chunk c : presetChunks) {
+                    int newOrdinal = c.ordinal() + ordinalOffset;
+                    shifted.add(new Chunk(
+                            ChunkId.of(c.docId().value(), newOrdinal),
+                            c.docId(), newOrdinal, c.text()));
+                }
+                return List.copyOf(shifted);
             }
         };
         return new ExperimentPlan(id, "方案 " + id, preset, topK);
@@ -171,7 +196,7 @@ final class DiagnosisFixtures {
 
     /** 按召回方案的 id 指定各自的假召回器。 */
     static RetrieverFactory factory(Map<String, Retriever> byRetrieverId) {
-        return (config, topK) -> {
+        return (config, topK, shouldRerank) -> {
             Retriever retriever = byRetrieverId.get(config.id());
             if (retriever == null) {
                 throw new IllegalArgumentException(

@@ -73,6 +73,11 @@ public final class DiagnoseCommand implements Callable<Integer> {
             description = "配合 --chunk-size 用：相邻窗口的重叠字符数（默认窗口的 20%）")
     private Integer chunkOverlap;
 
+    @Option(names = {"--rerank"},
+            description = "改成对比「加不加重排」，而不是对比切分。"
+                    + "报告说「瓶颈在排序」时用这个验证重排到底有没有用。")
+    private boolean compareRerank;
+
     @Option(names = {"--only-chunking"},
             description = "只跑一个切分方案，不和别的切分对比。"
                     + "想快点看到结果时用，实验次数会少很多。")
@@ -196,14 +201,18 @@ public final class DiagnoseCommand implements Callable<Integer> {
             // 自定义的放最前面当基准：加这个参数的人通常就是想拿它和现状比
             List<ExperimentPlan> plans = new ArrayList<>();
             plans.add(custom);
-            plans.addAll(ExperimentPlan.standardBaselines(topK));
+            plans.addAll(compareRerank
+                    ? ExperimentPlan.rerankBaselines(topK)
+                    : ExperimentPlan.chunkingBaselines(topK));
             return List.copyOf(plans);
         }
 
         if (onlyChunking) {
             return List.of(ExperimentPlan.recursiveDefault(topK));
         }
-        return ExperimentPlan.standardBaselines(topK);
+        return compareRerank
+                ? ExperimentPlan.rerankBaselines(topK)
+                : ExperimentPlan.chunkingBaselines(topK);
     }
 
     /** 检查参数。返回 {@code null} 表示都合法。 */

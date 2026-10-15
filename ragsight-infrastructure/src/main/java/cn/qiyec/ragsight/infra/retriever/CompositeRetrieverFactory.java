@@ -9,6 +9,7 @@ import cn.qiyec.ragsight.domain.retrieval.ReciprocalRankFusion;
 import cn.qiyec.ragsight.domain.retrieval.Retriever;
 import cn.qiyec.ragsight.domain.retrieval.Tokenizer;
 import cn.qiyec.ragsight.domain.retrieval.VectorIndex;
+import cn.qiyec.ragsight.infra.reranker.LexicalOverlapReranker;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -91,18 +92,25 @@ public final class CompositeRetrieverFactory implements RetrieverFactory {
     }
 
     @Override
-    public Retriever create(RetrieverConfig config, int topK) {
+    public Retriever create(RetrieverConfig config, int topK, boolean shouldRerank) {
         if (config == null) {
             throw new IllegalArgumentException("config 不能为空");
         }
         if (topK <= 0) {
             throw new IllegalArgumentException("topK 必须为正数，实际为 " + topK);
         }
-        return switch (config.kind()) {
+
+        Retriever base = switch (config.kind()) {
             case VECTOR_ONLY -> buildVectorRetriever();
             case KEYWORD_ONLY -> buildKeywordRetriever();
             case HYBRID_RRF -> buildHybridRetriever(topK);
         };
+
+        if (!shouldRerank) {
+            return base;
+        }
+        // 重排只是加一层包装：先多召回一些候选，排完再取前 K
+        return new RerankedRetriever(base, new LexicalOverlapReranker(tokenizerSupplier.get()), topK);
     }
 
     private Retriever buildVectorRetriever() {

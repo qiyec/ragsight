@@ -20,6 +20,7 @@ import static cn.qiyec.ragsight.application.DiagnosisFixtures.plan;
 import static cn.qiyec.ragsight.application.DiagnosisFixtures.questionOf;
 import static cn.qiyec.ragsight.application.DiagnosisFixtures.scripted;
 import static cn.qiyec.ragsight.application.DiagnosisFixtures.fixture;
+import static cn.qiyec.ragsight.application.DiagnosisFixtures.variantPlan;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -161,7 +162,7 @@ class DiagnosisEngineChunkingTest {
     // ---------------------------------------------------------------
 
     @Test
-    @DisplayName("各切分方案效果差异很小时，应明确说不用在切分上花时间")
+    @DisplayName("各切分方案效果差很多时，应指出切分有影响，并提醒别把片段越切越大")
     void should_say_chunking_does_not_matter_when_spread_is_small() {
         // 两个切分方案下召回表现一样，说明切分不是瓶颈
         var fixture = fixture(3);
@@ -169,11 +170,13 @@ class DiagnosisEngineChunkingTest {
 
         var report = engineWithAll(retriever)
                 .diagnose(DiagnosisFixtures.request(fixture,
-                        List.of(plan("p1", fixture.chunks()), plan("p2", fixture.chunks()))));
+                        List.of(plan("p1", fixture.chunks()),
+                        variantPlan("p2", fixture.chunks(), 100))));
 
         assertThat(report.chunkingCount()).isEqualTo(2);
-        assertThat(findingContaining(report, "不用在切分粒度上继续花时间"))
-                .contains("几乎没影响");
+        assertThat(findingContaining(report, "切分确实有影响")).contains("最高");
+        // 报告必须提醒"片段越大命中率天然越高"，否则用户会被数字误导着越切越大
+        assertThat(findingContaining(report, "别急着下结论")).contains("片段切得越大");
     }
 
     // ---------------------------------------------------------------
@@ -313,7 +316,8 @@ class DiagnosisEngineChunkingTest {
 
         var report = engineWithAll(retriever)
                 .diagnose(DiagnosisFixtures.request(fixture,
-                        List.of(plan("p1", fixture.chunks()), plan("p2", fixture.chunks()))));
+                        List.of(plan("p1", fixture.chunks()),
+                        variantPlan("p2", fixture.chunks(), 100))));
 
         assertThat(report.experimentCount()).isEqualTo(6);
         assertThat(report.chunkingCount()).isEqualTo(2);

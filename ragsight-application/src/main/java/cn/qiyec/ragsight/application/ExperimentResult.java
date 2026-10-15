@@ -46,7 +46,10 @@ public record ExperimentResult(
      * 报告里显示的完整名字，比如"递归切分 90 字 + 仅关键词召回"。
      *
      * <p>把两个维度都写出来，用户才不会看错行——
-     * 只写召回方式的话，三行数据看起来会一模一样。
+     * 只写召回方式的话，好几行数据看起来会一模一样。
+     *
+     * <p>重排会让同一个切分下出现两行只差一点的数据（加没加重排），
+     * 所以也要标出来，否则用户分不清哪行是哪个。
      */
     public String displayName() {
         return plan.displayName() + " + " + retriever.displayName();
