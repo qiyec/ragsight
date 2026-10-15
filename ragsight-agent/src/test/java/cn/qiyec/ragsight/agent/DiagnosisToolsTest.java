@@ -369,14 +369,31 @@ class DiagnosisToolsTest {
         }
 
         @Test
-        @DisplayName("收尾应说明穷举要跑多少次，让人看出省了多少")
-        void finish_should_compare_with_brute_force() {
+        @DisplayName("收尾要把「穷举要多少次」算出来，而不是写死一个数")
+        void finish_should_compute_brute_force_honestly() {
             tools.runBaseline(90);
 
             String output = tools.finish();
 
-            assertThat(output).contains("18 次");
+            // 这个数取决于试过几个切分窗口，不能写死。
+            // 之前写死成"18 次"——那只对"切分窗口固定 90 字"成立，
+            // Agent 换窗口之后这个数就错了。
+            assertThat(output).contains("对照");
+            assertThat(output).contains("3 种召回 × 2 种重排");
             assertThat(output).contains("一共跑了");
+        }
+
+        @Test
+        @DisplayName("没比穷举省时要老实说，不能含糊过去")
+        void finish_should_admit_when_not_saving() {
+            tools.runBaseline(90);
+
+            String output = tools.finish();
+
+            // 基准一次就跑了 6 次，而"只探索了 1 种切分窗口"时穷举只要 6 次
+            // （1 × 3 召回 × 2 重排）。所以这次是**没省**，报告必须说出来。
+            // 与其给一个漂亮但站不住的对比，不如把实情讲清楚。
+            assertThat(output).contains("没比穷举省");
         }
     }
 

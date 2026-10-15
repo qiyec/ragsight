@@ -244,8 +244,39 @@ public class DiagnosisTools {
         StringBuilder sb = new StringBuilder();
         sb.append("========== 诊断结论 ==========\n\n");
         sb.append("语料：").append(session.corpusLabel()).append('\n');
-        sb.append("一共跑了 ").append(session.experimentCount()).append(" 次实验")
-                .append("（穷举全部组合要跑 18 次）\n\n");
+        sb.append("一共跑了 ").append(session.experimentCount()).append(" 次实验\n\n");
+
+        // 老实交代"这次到底省没省"。
+        //
+        // 之前这里写死了一句"穷举全部组合要跑 18 次"——那是错的：
+        // 穷举的次数取决于**试了几个切分窗口**，每换一个窗口就是
+        // 一整套新的组合。Agent 探索得越多，穷举的对照数就越大，
+        // 但 Agent 自己的开销也同比涨。
+        //
+        // 真实跑下来就撞到过这种情况：Agent 在 120 字那一档
+        // 试了 6 步、跑了 16 次，而"切分窗口固定 120 字"的穷举只要 12 次——
+        // 也就是**它反而跑多了**。
+        //
+        // 与其给一个漂亮但站不住的对比，不如把这个数算清楚再报，
+        // 并且明确说出"这次没省"。
+        int exploredChunkSizes = session.triedChunkSizes().size();
+        int gridPerChunkSize = 3 * 2;   // 3 种召回 × 2 种重排
+        int bruteForce = exploredChunkSizes * gridPerChunkSize;
+        int actual = session.experimentCount();
+
+        sb.append("对照：你在 ").append(exploredChunkSizes).append(" 种切分窗口上探索。")
+                .append("如果把每种窗口的所有组合都跑一遍，是 ")
+                .append(exploredChunkSizes).append(" × 3 种召回 × 2 种重排 = ")
+                .append(bruteForce).append(" 次。\n");
+        if (actual < bruteForce) {
+            sb.append("你跑了 ").append(actual).append(" 次，省了 ")
+                    .append(bruteForce - actual).append(" 次。\n\n");
+        } else {
+            sb.append("你跑了 ").append(actual).append(" 次——**这次没比穷举省**。")
+                    .append("原因是每做一次对比都要把「改之前」重跑一遍作对照，")
+                    .append("而语料小、单次实验只要几十毫秒，这个开销占比就上来了。\n")
+                    .append("维度一多（或者单次实验变贵）差距才会拉开。\n\n");
+        }
 
         sb.append("推荐配置：").append(describeBest()).append('\n');
         sb.append(String.format("  Recall %s   MRR %s   nDCG %s%n%n",
@@ -406,8 +437,9 @@ public class DiagnosisTools {
             case "chunk_size" -> "切分窗口 " + chunkSizeOf(current) + " 字 → " + newValue + " 字";
             case "strategy" -> "切分策略 " + strategyOf(current) + " → " + newValue;
             case "retriever" -> "召回方式 " + current.retrieverLabel() + " → " + newValue;
-            case "rerank" -> "重排 " + (current.planLabel().contains("重排") ? "开" : "关")
-                    + " → " + newValue;
+            // 重排要说"开/关"，不要直接吐模型给的 true/false——
+            // 报告是给人看的，中文里"关 → true"读起来很别扭
+            case "rerank" -> "重排 " + (current.planLabel().contains("重排") ? "开 → 关" : "关 → 开");
             default -> change + " → " + newValue;
         };
     }
