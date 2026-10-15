@@ -186,8 +186,7 @@ public class RagsightDiagnosisAgent implements AutoCloseable {
                 throw new IllegalArgumentException("session 不能为空，它保存着这次诊断的语料和进度");
             }
 
-            Toolkit toolkit = new Toolkit();
-            toolkit.registerTool(new DiagnosisTools(session));
+            Toolkit toolkit = buildToolkit(session);
 
             log.info("创建诊断 Agent：模型={}，语料={}，最多 {} 轮",
                     model, session.corpusLabel(), maxIters);
@@ -206,6 +205,20 @@ public class RagsightDiagnosisAgent implements AutoCloseable {
 
             return new RagsightDiagnosisAgent(builder.build());
         }
+    }
+
+    /**
+     * 造工具集。
+     *
+     * <p>抽成静态方法是为了能被测试直接调用——**"工具到底有没有
+     * 注册成模型能看见的 schema"这件事必须验证**。
+     * 如果 {@code @Tool} 反射注册有问题，模型只会聊天不干活，
+     * 而且不会有任何报错，非常难查。
+     */
+    static Toolkit buildToolkit(DiagnosisSession session) {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new DiagnosisTools(session));
+        return toolkit;
     }
 
     /**
