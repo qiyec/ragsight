@@ -172,6 +172,7 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose
 | 系统提示词（要求一次只改一个东西） | ✅ |
 | 进度上报（AgentScope Hook） | ✅ |
 | 架构规则（不依赖 agent / 不依赖 agentscope 等 7 条） | ✅ 已验证会拦人 |
+| 命令行入口 `diagnose` | ✅ `--list` 和缺 Key 提示已实测 |
 | **真实调用大模型跑通** | ❌ **未验证**，需要 `DASHSCOPE_API_KEY` |
 
 ### 下一步要做的第一件事

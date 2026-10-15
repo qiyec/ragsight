@@ -53,9 +53,43 @@
     </dependency>
 
     <dependency>
+      <groupId>info.picocli</groupId>
+      <artifactId>picocli</artifactId>
+    </dependency>
+
+    <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <build>
+    <finalName>ragsight-agent</finalName>
+    <plugins>
+      <!--
+        打成可执行 jar，让它能像命令行工具一样用。
+
+        classifier="exec" 的理由和 web 模块一样：默认会把可执行胖包
+        替换成主产物，而胖包不能被当作依赖，ArchUnit 也读不了
+        （类在 BOOT-INF/classes 下）。
+      -->
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <version>${spring-boot.version}</version>
+        <configuration>
+          <classifier>exec</classifier>
+          <mainClass>cn.qiyec.ragsight.agent.AgentCli</mainClass>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>repackage</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>

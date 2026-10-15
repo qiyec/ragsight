@@ -141,6 +141,23 @@ http://localhost:8080
 页面上可以调语料、切分窗口、召回条数，勾选要不要对比重排，点"跑诊断"。
 结果会画成热力图——哪个组合好、切分有多大影响，一眼能看出来。
 
+### 方式三：让 Agent 自己找瓶颈（需要大模型凭据）
+
+上面两种方式都是**你把组合定好、它去跑**。这个方式是**它自己决定试什么**：
+先跑基准，看结果，再决定下一步改哪一个，通常 3 到 4 轮就够——
+而不是把 18 种组合跑一遍。
+
+```bash
+# 先把凭据放环境变量（DashScope 是这个名字）
+$env:DASHSCOPE_API_KEY = "你的key"        # Windows PowerShell
+export DASHSCOPE_API_KEY=你的key           # Linux / macOS
+
+java -jar ragsight-agent/target/ragsight-agent-exec.jar diagnose
+```
+
+加上 `--list` 看有哪些语料可选，加 `-q` 只看最终结论不显示中间过程。
+
+> 这条路**必须有大模型凭据**。不想配的话，前两种方式都不需要 Key。
 ### 方式二：命令行（适合脚本化和进 CI）
 
 ```bash
