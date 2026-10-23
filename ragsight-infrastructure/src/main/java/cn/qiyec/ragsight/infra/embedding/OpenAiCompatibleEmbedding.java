@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.URI;
@@ -35,8 +37,22 @@ import java.util.List;
  */
 public final class OpenAiCompatibleEmbedding implements EmbeddingModel {
 
-    /** 一次请求最多带多少条文本。太大容易被服务端拒。 */
-    public static final int DEFAULT_BATCH_SIZE = 16;
+    private static final Logger log =
+            LoggerFactory.getLogger(OpenAiCompatibleEmbedding.class);
+
+    /**
+     * 一次请求最多带多少条文本。
+     *
+     * <p><b>为什么是 10</b>：这是真实服务里遇到的公共下限。
+     * DashScope 的 text-embedding-v4 明确限制"不能大于 10"，
+     * 而 OpenAI 允许到 2048。取各家里最小的，第一次就能过。
+     *
+     * <p>（这个数是跑真实诊断之后才定下来的。最初凭直觉写了 16，
+     * 离线测试全过——因为假接口不校验批量——直到真调 DashScope
+     * 才报 "batch size is invalid, it should not be larger than 10"。
+     * 这就是为什么内部逻辑可以离线测，但外部接口的限制只能真调才知道。）
+     */
+    public static final int DEFAULT_BATCH_SIZE = 10;
 
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
 
@@ -45,7 +61,17 @@ public final class OpenAiCompatibleEmbedding implements EmbeddingModel {
     private final String baseUrl;
     private final String apiKey;
     private final String modelName;
-    private final int batchSize;
+
+    /**
+     * 当前用的批量大小。
+     *
+     * <p>不是 final：服务端说批量太大时会往下降，降下来就一直用。
+     * 加 volatile 是因为一个实例可能被多个线程共用（诊断引擎里
+     * 所有切分方案共用一个模型实例）——只降不升，所以即使丢了某次
+     * 更新也无所谓，最终会收敛到能用的值。
+     */
+    private volatile int batchSize;
+
     private final int dimension;
 
     private OpenAiCompatibleEmbedding(HttpClient httpClient,
@@ -127,9 +153,36 @@ public final class OpenAiCompatibleEmbedding implements EmbeddingModel {
         }
 
         List<float[]> all = new ArrayList<>(texts.size());
-        for (int start = 0; start < texts.size(); start += batchSize) {
-            int end = Math.min(start + batchSize, texts.size());
-            List<float[]> batch = callApi(texts.subList(start, end));
+        int start = 0;
+
+        while (start < texts.size()) {
+            int currentBatch = batchSize;
+            int end = Math.min(start + currentBatch, texts.size());
+            List<float[]> batch;
+            try {
+                batch = callApi(texts.subList(start, end));
+            } catch (EmbeddingApiException e) {
+                // 服务端嫌这一批太大时自动减半重试，而不是直接失败。
+                //
+                // 为什么值得这么做：各家允许的批量差别很大
+                //（DashScope 是 10，OpenAI 是 2048），而且可能调整。
+                // 写死一个数字总有撞墙的时候，撞了就整个诊断失败，
+                // 用户还不知道该改哪里。
+                //
+                // 为什么不用错误文案判断：文案会变、会本地化，
+                // 靠它匹配不可靠。所以规则简单粗暴——400 且批量大于 1
+                // 就减半。代价是"参数真错"时要多试几次（最多 log2(10) 次），
+                // 换来的是不会因为文案措辞变化而卡死。
+                if (e.statusCode() == 400 && currentBatch > 1) {
+                    int reduced = Math.max(1, currentBatch / 2);
+                    batchSize = reduced;
+                    log.warn("服务端拒了这一批（{} 条），把批量降到 {} 条重试。原因：{}",
+                            currentBatch, reduced, e.getMessage());
+                    continue;   // 不推进 start，用更小的批重试同一段
+                }
+                throw e;
+            }
+
             if (batch.size() != end - start) {
                 throw new EmbeddingApiException(String.format(
                         "接口返回的向量数(%d)和请求的文本数(%d)不一致，"
@@ -137,6 +190,7 @@ public final class OpenAiCompatibleEmbedding implements EmbeddingModel {
                         batch.size(), end - start), 0);
             }
             all.addAll(batch);
+            start = end;
         }
         return List.copyOf(all);
     }

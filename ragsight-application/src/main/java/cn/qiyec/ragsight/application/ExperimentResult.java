@@ -1,5 +1,6 @@
 package cn.qiyec.ragsight.application;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,7 +34,18 @@ public record ExperimentResult(
         if (outcomes == null) {
             throw new IllegalArgumentException("outcomes 不能为空");
         }
-        metricScores = Map.copyOf(metricScores);
+        // 用 LinkedHashMap 包一层，**不能用 Map.copyOf**。
+        //
+        // 报告的列顺序就是从这里的 key 顺序来的（见
+        // DiagnosisReport.metricNames()）。Map.copyOf 只保证不可变、
+        // 不保证保留插入顺序，于是同一份数据连续跑两次，
+        // 报告的指标列顺序可能不一样——「Recall / MRR / nDCG」
+        // 和「MRR / Recall / nDCG」都出现过。
+        //
+        // 数字本身不会错配（表头和数据行用的是同一个列表），
+        // 但"同一份输入两次生成不一样的报告"违反了可复现这条底线。
+        // 实测跑 5 次出现过 3 种列顺序。
+        metricScores = Collections.unmodifiableMap(new LinkedHashMap<>(metricScores));
         outcomes = List.copyOf(outcomes);
     }
 

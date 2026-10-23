@@ -65,6 +65,78 @@ class OpenAiCompatibleEmbeddingTest {
         });
     }
 
+    /**
+     * 挂一个"会挑剔批量大小"的接口。
+     *
+     * <p>模仿真实服务的行为：一批超过 {@code maxBatch} 条就返回 400，
+     * 说批量太大；没超过就正常返回对应条数的向量。
+     *
+     * <p>为什么需要它：真实服务对批量的限制差别很大
+     * （DashScope 是 10，OpenAI 是 2048），而我们的适配器要能自己降批。
+     * 这个行为只能用一个会拒绝的假接口才能测出来。
+     */
+    private void respondRejectingLargeBatches(int maxBatch) {
+        server.createContext("/v1/embeddings", exchange -> {
+            requestCount.incrementAndGet();
+            String body = new String(exchange.getRequestBody().readAllBytes(),
+                    StandardCharsets.UTF_8);
+            lastRequestBody.set(body);
+
+            int count = countInputs(body);
+            String response;
+            int status;
+            if (count > maxBatch) {
+                status = 400;
+                response = "{\"error\":{\"message\":\"batch size is invalid, "
+                        + "it should not be larger than " + maxBatch + "\"}}";
+            } else {
+                status = 200;
+                response = embeddingResponse(Math.max(count, 1), 3);
+            }
+
+            byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(status, bytes.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(bytes);
+            }
+        });
+    }
+
+    /**
+     * 第一次（探测维度）成功，之后一律返回指定错误。
+     *
+     * <p>为什么需要：{@code connect()} 会先发一条探测维度的请求。
+     * 如果那条就失败，"错误处理"根本测不到——连接阶段就抛了。
+     */
+    private void succeedOnceThenFail(int failStatus, String failBody) {
+        AtomicInteger seen = new AtomicInteger();
+        server.createContext("/v1/embeddings", exchange -> {
+            int n = seen.incrementAndGet();
+            requestCount.incrementAndGet();
+            String body = new String(exchange.getRequestBody().readAllBytes(),
+                    StandardCharsets.UTF_8);
+            lastRequestBody.set(body);
+
+            int status;
+            String response;
+            if (n == 1) {
+                status = 200;
+                response = embeddingResponse(1, 3);
+            } else {
+                status = failStatus;
+                response = failBody;
+            }
+
+            byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(status, bytes.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(bytes);
+            }
+        });
+    }
+
     /** 造一个维度为 3 的向量返回，条数由 input 里的元素数决定。 */
     private static String embeddingResponse(int count, int dimension) {
         StringBuilder sb = new StringBuilder("{\"data\":[");
@@ -250,23 +322,74 @@ class OpenAiCompatibleEmbeddingTest {
     // ---------------------------------------------------------------
 
     @Test
+    @DisplayName("服务端嫌批量太大时，应自动减半重试而不是直接失败")
+    void should_reduce_batch_when_server_rejects() {
+        // 这个假接口最多只接受 3 条。默认批量是 10，第一发必然被拒。
+        respondRejectingLargeBatches(3);
+        var embedding = OpenAiCompatibleEmbedding.connect(baseUrl, "k", "m");
+
+        // 6 条文本：10 被拒 → 5 被拒 → 2 通过 → 再 2 通过 → 再 2 通过
+        List<float[]> vectors = embedding.embed(
+                List.of("a", "b", "c", "d", "e", "f"));
+
+        assertThat(vectors)
+                .as("降批之后应该全部成功，一条都不能少")
+                .hasSize(6);
+    }
+
+    @Test
+    @DisplayName("降下来的批量要记住，后续不再重复撞墙")
+    void reduced_batch_should_stick() {
+        respondRejectingLargeBatches(3);
+        var embedding = OpenAiCompatibleEmbedding.connect(baseUrl, "k", "m");
+
+        embedding.embed(List.of("a", "b", "c", "d", "e", "f"));
+        int afterFirstCall = requestCount.get();
+
+        embedding.embed(List.of("g", "h", "i", "j", "k", "l"));
+        int secondCallRequests = requestCount.get() - afterFirstCall;
+
+        // 第二次调用时批量已经降到 2，6 条文本发 3 次请求就该完成。
+        // 如果每次都重新从 10 开始撞墙，这里会明显多于 3 次。
+        assertThat(secondCallRequests)
+                .as("批量已降过，第二次不该再撞墙")
+                .isLessThanOrEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("非 400 的错误不该降批重试——那解决不了问题，只是白花请求")
+    void should_not_retry_on_non_400_errors() {
+        // 探测那条成功，之后一律 401
+        succeedOnceThenFail(401, "{\"error\":{\"message\":\"Invalid API-key\"}}");
+        var embedding = OpenAiCompatibleEmbedding.connect(baseUrl, "k", "m");
+        int before = requestCount.get();
+
+        assertThatThrownBy(() -> embedding.embed(List.of("a", "b", "c")))
+                .isInstanceOf(EmbeddingApiException.class)
+                .hasMessageContaining("401");
+
+        // 401 不是批量的错，压成 1 条也一样失败，所以只该发 1 次。
+        // 如果不加这个判断，3 条文本会按 10→5→2 一路降下去白白多花请求。
+        assertThat(requestCount.get() - before)
+                .as("401 不该触发降批重试")
+                .isEqualTo(1);
+    }
+
+
+    @Test
     @DisplayName("超过一批的文本应分批发出，并按顺序拼回结果")
     void should_batch_and_preserve_order() {
         respondWith(200, embeddingResponse(1, 3));
-        // 探测占一次请求
-        var embedding = OpenAiCompatibleEmbedding.connect(baseUrl, "k", "m", 2);
-        int afterProbe = requestCount.get();
 
         // 这条接口固定只返回 1 条向量，所以分批时必须每条单独发才不出错。
         // 这里把 batchSize 设成 1 来验证分批逻辑本身。
         var single = OpenAiCompatibleEmbedding.connect(baseUrl, "k", "m", 1);
-        int afterSecondProbe = requestCount.get();
+        int afterProbe = requestCount.get();
 
         single.embed(List.of("a", "b", "c"));
 
-        // 探测 1 次 + 每条 3 次 = 4 次
-        assertThat(requestCount.get() - afterSecondProbe).isEqualTo(3);
-        assertThat(afterSecondProbe).isGreaterThanOrEqualTo(afterProbe);
+        // 3 条文本、批量 1 => 3 次请求
+        assertThat(requestCount.get() - afterProbe).isEqualTo(3);
     }
 
     @Test
