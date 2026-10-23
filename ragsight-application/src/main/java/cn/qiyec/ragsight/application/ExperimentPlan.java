@@ -74,6 +74,36 @@ public record ExperimentPlan(String id, String displayName, ChunkingStrategy str
     }
 
     /**
+     * 如果一个方案里包含某个方案，就把实际切得一样的那个剔掉。
+     *
+     * <p>解决的是这种场景：用户自己指定了一个切分参数，而内置基线里
+     * 恰好有一个参数相同的。两个方案 id 不同（{@code custom-90} /
+     * {@code recursive-90}）但**实际切出来一模一样**，结果报告里出现
+     * 两行同名的方案、多跑一组实验、热力图多一行重复。
+     *
+     * <p>判断是否"一样"用 {@link ChunkingStrategy#describe()}，
+     * 不用 id——id 是我们自己起的名字，{@code describe()} 描述的
+     * 是实际怎么切，那才是判断重复的依据。
+     *
+     * @param preferred 想要的方案（通常排最前面当基准）
+     * @param others    其他候选，重复的会被剔除
+     */
+    public static List<ExperimentPlan> concatWithoutDuplicates(
+            ExperimentPlan preferred, List<ExperimentPlan> others) {
+
+        List<ExperimentPlan> result = new ArrayList<>();
+        result.add(preferred);
+
+        String shape = preferred.strategy().describe();
+        for (ExperimentPlan other : others) {
+            if (!other.strategy().describe().equals(shape)) {
+                result.add(other);
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    /**
      * 默认的实验条件：两种切分粒度，各跑一遍不加重排的。
      *
      * <p>刻意选一大一小两个粒度。如果两者指标接近，说明切分不是瓶颈——

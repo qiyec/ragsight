@@ -71,7 +71,10 @@ public final class DiagnoseCommand implements Callable<Integer> {
     private Integer chunkSize;
 
     @Option(names = {"--chunk-overlap"},
-            description = "配合 --chunk-size 用：相邻窗口的重叠字符数（默认窗口的 20%）")
+            // 注意这里的 %%：picocli 会把说明文本当格式化串处理，
+            // 单独一个 % 会触发 "Conversion = '）'" 警告，
+            // 帮助信息就退化成未替换的原始字符串。要写成 %%。
+            description = "配合 --chunk-size 用：相邻窗口的重叠字符数（默认窗口的 20%%）")
     private Integer chunkOverlap;
 
     @Option(names = {"--rerank"},
@@ -260,13 +263,15 @@ public final class DiagnoseCommand implements Callable<Integer> {
             if (onlyChunking) {
                 return List.of(custom);
             }
-            // 自定义的放最前面当基准：加这个参数的人通常就是想拿它和现状比
-            List<ExperimentPlan> plans = new ArrayList<>();
-            plans.add(custom);
-            plans.addAll(compareRerank
-                    ? ExperimentPlan.rerankBaselines(topK)
-                    : ExperimentPlan.chunkingBaselines(topK));
-            return List.copyOf(plans);
+            // 自定义的放最前面当基准：加这个参数的人通常就是想拿它和现状比。
+            //
+            // 去重交给 ExperimentPlan 做（那边有测试）：
+            // --chunk-size 90 和内置基线里的 90 字方案实际切得一样，
+            // 不去重的话报告里会出现两行同名方案、多跑一组实验。
+            return ExperimentPlan.concatWithoutDuplicates(custom,
+                    compareRerank
+                            ? ExperimentPlan.rerankBaselines(topK)
+                            : ExperimentPlan.chunkingBaselines(topK));
         }
 
         if (onlyChunking) {
