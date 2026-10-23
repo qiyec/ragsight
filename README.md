@@ -301,9 +301,26 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose \
 |---|---|
 | [AGENTS.md](AGENTS.md) | 项目定位、要守的规矩、编码习惯 |
 | [PROGRESS.md](PROGRESS.md) | 进度、下一步、踩过的坑 |
+| [docs/learn/](docs/learn/) | **学习文档**：想搞懂 RAG 和 Agent，从这套开始 |
 | [docs/design/](docs/design/) | **架构说明**：分层、模块、设计模式、二次开发指南 |
 | [docs/adr/](docs/adr/) | 每个重要决定的原因，以及被否掉的方案 |
 | [docs/setup/environment.md](docs/setup/environment.md) | 环境要求和常见问题 |
+
+### 学习文档（想搞懂 RAG / Agent，看这套）
+
+每一篇都有能立刻跑的命令，不用先读完再动手。
+
+| 文档 | 内容 |
+|---|---|
+| [README](docs/learn/README.md) | 学习路径：什么顺序看、每篇什么结构 |
+| [01-跑起来看结果](docs/learn/01-跑起来看结果.md) | 报告七块各在回答什么问题 |
+| [02-RAG在解决什么问题](docs/learn/02-RAG在解决什么问题.md) | 三个阶段，为什么只诊断检索 |
+| [03-切分](docs/learn/03-切分.md) | 切太碎和切太大的代价，为什么"片段大指标就好"是假象 |
+| [04-召回](docs/learn/04-召回.md) | 向量和关键词各擅长什么，为什么不总用融合 |
+| [05-指标](docs/learn/05-指标.md) | 手算 Recall / MRR / nDCG，和工具输出对上 |
+| [06-评测集](docs/learn/06-评测集.md) | 期望文字怎么写、负样本为什么必须有 |
+| [07-AgentScope是什么](docs/learn/07-AgentScope是什么.md) | ReAct 循环怎么转，框架替你省了什么 |
+| [08-让Agent自己决定试什么](docs/learn/08-让Agent自己决定试什么.md) | 单变量对比为什么是关键 |
 
 ### 架构说明（想读代码或改代码，看这套）
 
