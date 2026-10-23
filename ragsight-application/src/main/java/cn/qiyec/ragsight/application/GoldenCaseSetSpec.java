@@ -95,9 +95,18 @@ public record GoldenCaseSetSpec(String name, List<GoldenCaseSpec> cases) {
                 continue;
             }
             if (!missing.isEmpty()) {
-                // 部分找不到也报出来，但先不中断——只要有一条能对上，用例仍然可用
+                // 有 marker 对不上就记下来，最后统一炸。
+                //
+                // 这里原本的注释是"部分找不到也报出来，但先不中断——只要
+                // 有一条能对上，用例仍然可用"，和实际行为不符：下面
+                // problems 非空时会抛异常，整个诊断根本跑不起来。
+                //
+                // 抛异常是对的，所以改注释而不是改行为。理由：一条 marker
+                // 悄悄失效的话，用户不会发现，测试集就静默变弱了，
+                // 而他还在拿这份残缺测试集上的分数做决策。
+                // 「以为测了、其实没测」比直接报错危险得多。
                 problems.add(String.format(
-                        "用例「%s」有部分期望文字没找到（其余仍参与评测）：%s",
+                        "用例「%s」有期望文字在语料里找不到：%s",
                         spec.id(), String.join(" | ", missing)));
             }
 
