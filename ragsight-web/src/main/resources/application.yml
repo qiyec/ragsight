@@ -9,5 +9,13 @@ ragsight:
 logging:
   level:
     cn.qiyec.ragsight: INFO
+    # 网页上跑 Agent 时，把完整执行轨迹也写进日志。
+    # 一次约两百行：发了什么消息、模型回了什么、调了什么工具、花了多少 token。
+    # 嫌吵就改成 INFO，那样只剩"完成/失败"这种骨架。
+    cn.qiyec.ragsight.agent.AgentTraceHook: DEBUG
+    # AgentScope 自己的 INFO 留着，能看到工具注册情况。
+    # 它的 DEBUG 太吵（每次 HTTP 都打），压在 INFO。
+    io.agentscope: INFO
   pattern:
-    console: "%d{HH:mm:ss} %-5level %logger{20} - %msg%n"
+    # 带上毫秒：看每轮耗时的时候有用
+    console: "%d{HH:mm:ss.SSS} %-5level %logger{24} - %msg%n"

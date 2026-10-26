@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  命令行的日志配置。
+
+  ⚠ 和 ragsight-agent 模块下的 logback.xml 内容一样，改一处要同步改另一处。
+  两个模块各自打独立 jar，所以各需要一份。
+
+  默认把 Agent 的完整执行轨迹打开：发了什么消息、模型回了什么、
+  调了什么工具、返回了什么、花了多少 token 和时间。
+  一次诊断约两百行，是给"想看清 Agent 到底在干什么"的人准备的。
+
+  嫌吵的话把 AgentTraceHook 那行改成 INFO：只剩骨架，没有正文。
+-->
+<configuration>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <!-- 只显示时间、级别和类名，够定位了 -->
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{24} - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 默认安静。这个项目自己的 INFO 在下面单独开 -->
+    <root level="WARN">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+    <logger name="cn.qiyec.ragsight" level="INFO"/>
+
+    <!--
+      完整轨迹。DEBUG 才有正文（消息、提示词、工具返回全文）。
+    -->
+    <logger name="cn.qiyec.ragsight.agent.AgentTraceHook" level="DEBUG"/>
+
+    <!--
+      AgentScope 自己的 INFO 留着——能看到"注册了哪些工具"，
+      排查"模型为什么没调某个工具"时有用。
+      但它的 DEBUG 太吵（每次 HTTP 都打），压在 INFO。
+    -->
+    <logger name="io.agentscope" level="INFO"/>
+
+</configuration>

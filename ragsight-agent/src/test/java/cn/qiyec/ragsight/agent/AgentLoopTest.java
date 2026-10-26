@@ -300,9 +300,9 @@ class AgentLoopTest {
                         CorpusCatalog.DEMO_ID, null, null, 5, false, false, null, null));
     }
 
-    /** ReportingHook 是包内可见的，测试同包所以能直接用。 */
+    /** AgentTraceHook 是包内可见的，测试同包所以能直接用。 */
     private static io.agentscope.core.hook.Hook newHook(
             RagsightDiagnosisAgent.ProgressListener listener) {
-        return new ReportingHook(listener);
+        return new AgentTraceHook(listener, "#test");
     }
 }

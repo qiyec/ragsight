@@ -62,21 +62,40 @@ public class RagsightDiagnosisAgent implements AutoCloseable {
 
     private final ReActAgent agent;
 
-    private RagsightDiagnosisAgent(ReActAgent agent) {
+    /** 记执行轨迹。可能为 null（没挂监听也想要日志时仍然会有，所以一般不为 null）。 */
+    private final AgentTraceHook traceHook;
+
+    /** 这几样是"这次跑的是什么"，在开始时记一次，后面每条日志都能对上号。 */
+    private final String corpusLabel;
+    private final String modelName;
+    private final String systemPrompt;
+    private final int maxIters;
+
+    private RagsightDiagnosisAgent(ReActAgent agent, AgentTraceHook traceHook,
+                                   String corpusLabel, String modelName,
+                                   String systemPrompt, int maxIters) {
         this.agent = agent;
+        this.traceHook = traceHook;
+        this.corpusLabel = corpusLabel;
+        this.modelName = modelName;
+        this.systemPrompt = systemPrompt;
+        this.maxIters = maxIters;
     }
 
     /**
      * 开始诊断。给的这句话是"任务说明"，Agent 会自己决定先调用哪个工具。
      *
      * <p>这是个阻塞调用，会一直等到 Agent 认为该收尾了
-     * （或者撞上 {@code maxIters} 上限）。整个过程的每一步都会通过
-     * {@link Listener} 报出来。
+     * （或者撞上 {@code maxIters} 上限）。整个过程会写进日志，
+     * 同时通过 {@link ProgressListener} 报给界面。
      */
     public String diagnose(String task) {
+        traceHook.begin(corpusLabel, modelName, maxIters, systemPrompt);
         try {
             Msg reply = agent.call(task, RuntimeContext.empty()).block();
-            return reply == null ? "（模型没有返回内容）" : reply.getTextContent();
+            String text = reply == null ? "（模型没有返回内容）" : reply.getTextContent();
+            traceHook.finish(text);
+            return text;
         } catch (RuntimeException e) {
             log.error("诊断 Agent 执行失败", e);
             throw new AgentRunException(
@@ -198,14 +217,31 @@ public class RagsightDiagnosisAgent implements AutoCloseable {
                     .toolkit(toolkit)
                     .maxIters(maxIters);
 
-            // 有监听者才挂进度上报。没人听的时候少一层间接调用。
-            if (!progressListeners.isEmpty()) {
-                builder.hook(new ReportingHook(new CompositeListener(progressListeners)));
-            }
+            // 不管有没有界面监听，轨迹都要记——命令行和网页都需要能事后查。
+            // 没有监听者时传 null，Hook 只写日志。
+            ProgressListener uiListener = progressListeners.isEmpty()
+                    ? null
+                    : new CompositeListener(progressListeners);
+            AgentTraceHook traceHook = new AgentTraceHook(uiListener, nextRequestId());
+            builder.hook(traceHook);
 
-            return new RagsightDiagnosisAgent(builder.build());
+            return new RagsightDiagnosisAgent(builder.build(), traceHook,
+                    session.corpusLabel(), model, systemPrompt, maxIters);
         }
     }
+
+    /**
+     * 生成一个短的请求标识，用来把一次诊断的日志串起来。
+     *
+     * <p>并发跑两个诊断时，日志会交错。有了这个 id，grep 一下就能捞齐一次。
+     * 用计数器而不是随机数：日志是给人看的，1、2、3 比 a3f9c2 好认。
+     */
+    private static String nextRequestId() {
+        return "#" + REQUEST_SEQ.incrementAndGet();
+    }
+
+    private static final java.util.concurrent.atomic.AtomicInteger REQUEST_SEQ =
+            new java.util.concurrent.atomic.AtomicInteger();
 
     /**
      * 造工具集。
