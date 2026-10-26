@@ -163,7 +163,7 @@ java -jar ragsight-cli/target/ragsight-cli.jar diagnose
 | 4 | 本地仓库位置 | 读 `conf/settings.xml` | `D:\develop\environment\Maven\repo` |
 | 5 | 无 SDKMAN；有 Scoop/fnm/uv | `Get-Command sdk` 等 | Scoop 仅装 git/7zip/neofetch |
 | 6 | `mvnw` 换行符 | `git ls-files --eol mvnw` | `i/lf w/lf attr/text=auto eol=lf` |
-| 7 | 全量构建 | `mvnw.cmd clean verify`（JAVA_HOME 置空） | 退出码 0，205 个测试全通过 |
+| 7 | 全量构建 | `mvnw.cmd clean verify`（JAVA_HOME 置空） | 退出码 0，294 个测试全通过 |
 | 8 | **诊断报告可产出** | `java -jar ragsight-cli.jar diagnose` | 输出完整 Markdown 报告（见上方里程碑） |
 | 9 | 离线向量化实测相似度 | `DeterministicHashEmbeddingTest` | 计费规则/收费规则=0.7500；计费/收费=0.5000；无交集=0.0000 |
 | 10 | BM25 手算一致性 | `Bm25ScorerTest` | IDF=ln(10/7)=0.356674943938732 精确一致；docA=0.519658858718683 |
